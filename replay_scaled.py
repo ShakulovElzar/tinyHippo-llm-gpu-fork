@@ -82,7 +82,7 @@ try:
 except ImportError:
     _MPI_AVAILABLE = False
 
-import nest
+import simbackend as sim
 
 
 # ============================================================================
@@ -98,7 +98,7 @@ def _mpi_rank() -> int:
     """
     if _MPI_AVAILABLE:
         return _MPI.COMM_WORLD.Get_rank()
-    ks = nest.GetKernelStatus()
+    ks = sim.GetKernelStatus()
     return int(ks.get("rank", ks.get("process_id", 0)))
 
 
@@ -109,7 +109,7 @@ def _mpi_size() -> int:
     """
     if _MPI_AVAILABLE:
         return _MPI.COMM_WORLD.Get_size()
-    ks = nest.GetKernelStatus()
+    ks = sim.GetKernelStatus()
     return int(ks.get("total_num_processes",
                ks.get("num_processes",
                ks.get("mpi_num_processes", 1))))
@@ -320,11 +320,11 @@ def p(key, n_pre):
 # ============================================================================
 
 def _to_nc(x):
-    if isinstance(x, nest.NodeCollection):
+    if isinstance(x, sim.NodeCollection):
         return x
     if isinstance(x, (int, np.integer)):
-        return nest.NodeCollection([int(x)])
-    return nest.NodeCollection([int(i) for i in x])
+        return sim.NodeCollection([int(x)])
+    return sim.NodeCollection([int(i) for i in x])
 
 
 _NEST_MAX_LCID = 134_217_726          # 2^27 - 2: hard NEST per-VP per-synapse limit
@@ -334,7 +334,7 @@ _conn_count_per_vp: dict = {}         # cumulative static_synapse connections pe
 def _preflight_conn_check(pre_size: int, post_size: int, indegree: int, label: str = "") -> None:
     """Raise an informative error before NEST does if adding this fixed_indegree
     connection would push the cumulative static_synapse count past NEST's limit."""
-    ks  = nest.GetKernelStatus()
+    ks  = sim.GetKernelStatus()
     thr = ks.get("local_num_threads", ks.get("num_threads", ks.get("threads", 1)))
     mpi = ks.get("total_num_processes",
                   ks.get("num_processes", ks.get("mpi_num_processes", 1)))
@@ -383,7 +383,7 @@ def jittered_delay(base, jitter, lo=0.5):
     """
     if jitter is None or jitter <= 0:
         return float(base)
-    return nest.random.uniform(min=max(lo, base - jitter), max=base + jitter)
+    return sim.random.uniform(min=max(lo, base - jitter), max=base + jitter)
 
 
 # ============================================================================
@@ -545,8 +545,8 @@ def jittered_weight(base, cv):
         return float(base)
     b = float(base)
     sd = abs(b) * float(cv)
-    par = nest.random.normal(mean=b, std=sd)
-    return nest.math.max(par, 0.05 * b) if b > 0 else nest.math.min(par, 0.05 * b)
+    par = sim.random.normal(mean=b, std=sd)
+    return sim.math.max(par, 0.05 * b) if b > 0 else sim.math.min(par, 0.05 * b)
 
 
 def fixed_connect(pre, post, indegree, weight, delay, w_cv=None,
@@ -580,7 +580,7 @@ def fixed_connect(pre, post, indegree, weight, delay, w_cv=None,
         indegree  = int(indegree),
         label     = f"pre={len(pre_nc)} post={len(post_nc)} K={indegree}",
     )
-    nest.Connect(
+    sim.Connect(
         pre_nc, post_nc,
         conn_spec={"rule": "fixed_indegree", "indegree": int(indegree)},
         # delay may be a scalar OR a NEST parameter (e.g. nest.random.uniform)
@@ -641,9 +641,9 @@ def clustered_fixed_connect(pre, post, indegree, weight, delay, field_centers,
         w = np.exp(-(d ** 2) / (2 * cluster_sigma ** 2))
         w = w / w.sum()
         chosen = rng.choice(n_pre, size=int(indegree), replace=False, p=w)
-        src_nc = nest.NodeCollection(sorted(pre_ids[chosen].tolist()))
-        tgt_nc = nest.NodeCollection([int(post_ids[i])])
-        nest.Connect(src_nc, tgt_nc, conn_spec="all_to_all",
+        src_nc = sim.NodeCollection(sorted(pre_ids[chosen].tolist()))
+        tgt_nc = sim.NodeCollection([int(post_ids[i])])
+        sim.Connect(src_nc, tgt_nc, conn_spec="all_to_all",
                      syn_spec={"weight": weight_param, "delay": delay})
 
 
@@ -733,9 +733,9 @@ def grouped_fixed_connect(pre, post, indegree, weight, delay, n_groups, group_fr
         chosen_other = (rng.choice(other_idx[post_home_group[i]], size=k_other, replace=False)
                         if k_other > 0 else np.empty(0, dtype=int))
         chosen = np.concatenate([chosen_home, chosen_other]).astype(int)
-        src_nc = nest.NodeCollection(sorted(pre_ids[chosen].tolist()))
-        tgt_nc = nest.NodeCollection([int(post_ids[i])])
-        nest.Connect(src_nc, tgt_nc, conn_spec="all_to_all",
+        src_nc = sim.NodeCollection(sorted(pre_ids[chosen].tolist()))
+        tgt_nc = sim.NodeCollection([int(post_ids[i])])
+        sim.Connect(src_nc, tgt_nc, conn_spec="all_to_all",
                      syn_spec={"weight": weight_param, "delay": delay})
 
 
@@ -746,7 +746,7 @@ def bernoulli_connect(pre, post, prob, weight, delay):
     """
     if prob <= 0.0:
         return
-    nest.Connect(
+    sim.Connect(
         _to_nc(pre), _to_nc(post),
         conn_spec={"rule": "pairwise_bernoulli", "p": min(float(prob), 1.0)},
         syn_spec={"weight": float(weight), "delay": float(delay)},
@@ -766,7 +766,7 @@ def conn_stats(label, n_pre, n_post, n_conn_expected):
 
 
 def mean_rate(pop, spk, sim_ms):
-    ev = nest.GetStatus(spk, "events")[0]
+    ev = sim.GetStatus(spk, "events")[0]
     return len(ev["senders"]) / (len(pop) * (sim_ms / 1000.0))
 
 
@@ -804,9 +804,9 @@ def sequence_connect_ca3_layered(
     gs_deep = n_deep // n_groups
 
     # Build NodeCollection slices once upfront
-    sup_nc  = [nest.NodeCollection(sup_ids [k*gs_sup  : (k+1)*gs_sup ])
+    sup_nc  = [sim.NodeCollection(sup_ids [k*gs_sup  : (k+1)*gs_sup ])
                for k in range(n_groups)]
-    deep_nc = [nest.NodeCollection(deep_ids[k*gs_deep : (k+1)*gs_deep])
+    deep_nc = [sim.NodeCollection(deep_ids[k*gs_deep : (k+1)*gs_deep])
                for k in range(n_groups)]
 
     for k in range(n_groups):
@@ -844,12 +844,12 @@ def sequence_connect_ca3_layered(
 def make_replay_trigger(group_ids, trigger_start_ms, trigger_dur_ms=16.0,
                         trigger_rate=2600.0, weight=0.95, delay=1.0):
     ids  = [int(i) for i in group_ids]
-    gens = nest.Create("poisson_generator", len(ids), params={
+    gens = sim.Create("poisson_generator", len(ids), params={
         "rate": float(trigger_rate),
         "start": float(trigger_start_ms),
         "stop":  float(trigger_start_ms + trigger_dur_ms),
     })
-    nest.Connect(gens, nest.NodeCollection(ids), conn_spec="one_to_one",
+    sim.Connect(gens, sim.NodeCollection(ids), conn_spec="one_to_one",
                  syn_spec={"weight": float(weight), "delay": float(delay)})
     return gens
 
@@ -864,11 +864,11 @@ def make_staggered_replay_drive(seq_groups, swr_start_ms, direction="forward",
         # Round to 0.1 ms resolution — NEST BadProperty if not a multiple
         t0  = round(swr_start_ms + step * inter_step_ms, 1)
         ids = [int(i) for i in seq_groups[k]]
-        gens = nest.Create("poisson_generator", len(ids), params={
+        gens = sim.Create("poisson_generator", len(ids), params={
             "rate": float(drive_rate), "start": float(t0),
             "stop": float(t0 + drive_dur_ms),
         })
-        nest.Connect(gens, nest.NodeCollection(ids), conn_spec="one_to_one",
+        sim.Connect(gens, sim.NodeCollection(ids), conn_spec="one_to_one",
                      syn_spec={"weight": float(weight), "delay": float(delay)})
         all_gens.append(gens)
     return all_gens
@@ -949,11 +949,11 @@ def make_place_field_drive(population, field_centers, pattern_center, sigma,
     gain  = place_field_gain(field_centers, pattern_center, sigma)
     rates = base_rate + gain * peak_rate
     ids   = population.tolist() if hasattr(population, "tolist") else list(population)
-    gens  = nest.Create("poisson_generator", len(ids), params={
+    gens  = sim.Create("poisson_generator", len(ids), params={
         "start": float(t0_ms), "stop": float(t0_ms + dur_ms),
     })
-    nest.SetStatus(gens, "rate", rates.tolist())
-    nest.Connect(gens, nest.NodeCollection([int(i) for i in ids]),
+    sim.SetStatus(gens, "rate", rates.tolist())
+    sim.Connect(gens, sim.NodeCollection([int(i) for i in ids]),
                  conn_spec="one_to_one",
                  syn_spec={"weight": float(weight), "delay": float(delay)})
     return gens
@@ -1133,8 +1133,8 @@ def build_replay_network(
     """
     t0 = time.perf_counter()
 
-    nest.ResetKernel()
-    nest.SetKernelStatus({
+    sim.ResetKernel()
+    sim.SetKernelStatus({
         "resolution":        0.1,
         "local_num_threads": n_threads,
         "print_time":        True,
@@ -1142,7 +1142,7 @@ def build_replay_network(
     })
 
     # --- VP verification (critical: NEST may silently ignore local_num_threads) ---
-    ks_post = nest.GetKernelStatus()
+    ks_post = sim.GetKernelStatus()
     actual_thr = ks_post.get("local_num_threads",
                   ks_post.get("num_threads", ks_post.get("threads", 1)))
     actual_mpi = ks_post.get("total_num_processes",
@@ -1162,11 +1162,11 @@ def build_replay_network(
     safe_set_seeds(master_seed)
 
     try:
-        available = list(nest.node_models)
+        available = list(sim.node_models())
     except AttributeError:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
-            available = list(nest.Models("nodes"))
+            available = list(sim.Models("nodes"))
     if "izhikevich" not in available:
         raise RuntimeError("NEST model 'izhikevich' not found.")
 
@@ -1191,25 +1191,25 @@ def build_replay_network(
     print("  Creating populations (with V_m heterogeneity)...")
     _rng_vm = np.random.default_rng(seed_connect + 1)  # reproducible
 
-    CA1_PYR      = nest.Create("izhikevich", N_ca1_pyr,      params=het_params(ca1_pyr_params, N_ca1_pyr, _rng_vm))
+    CA1_PYR      = sim.Create("izhikevich", N_ca1_pyr,      params=het_params(ca1_pyr_params, N_ca1_pyr, _rng_vm))
     # CA1 PYR: σ=5 mV spread → Gaussian burst envelope (bio: ~15 mV cell-to-cell)
-    nest.SetStatus(CA1_PYR, "V_m",
+    sim.SetStatus(CA1_PYR, "V_m",
                    _rng_vm.normal(-65.0, 5.0, N_ca1_pyr).clip(-75,-55).tolist())
 
-    CA1_BASKET   = nest.Create("izhikevich", N_ca1_basket,   params=het_params(basket_params, N_ca1_basket, _rng_vm))
-    CA1_OLM      = nest.Create("izhikevich", N_ca1_olm,      params=het_params(olm_params, N_ca1_olm, _rng_vm))
+    CA1_BASKET   = sim.Create("izhikevich", N_ca1_basket,   params=het_params(basket_params, N_ca1_basket, _rng_vm))
+    CA1_OLM      = sim.Create("izhikevich", N_ca1_olm,      params=het_params(olm_params, N_ca1_olm, _rng_vm))
 
-    CA3_SUP      = nest.Create("izhikevich", N_ca3_sup,      params=het_params(ca3_sup_params, N_ca3_sup, _rng_vm))
+    CA3_SUP      = sim.Create("izhikevich", N_ca3_sup,      params=het_params(ca3_sup_params, N_ca3_sup, _rng_vm))
     # CA3 SUP: σ=4 mV → spread within each group → smooth diagonal heatmap
-    nest.SetStatus(CA3_SUP, "V_m",
+    sim.SetStatus(CA3_SUP, "V_m",
                    _rng_vm.normal(-63.2, 4.0, N_ca3_sup).clip(-72,-54).tolist())
 
-    CA3_DEEP     = nest.Create("izhikevich", N_ca3_deep,     params=het_params(ca3_deep_params, N_ca3_deep, _rng_vm))
-    nest.SetStatus(CA3_DEEP, "V_m",
+    CA3_DEEP     = sim.Create("izhikevich", N_ca3_deep,     params=het_params(ca3_deep_params, N_ca3_deep, _rng_vm))
+    sim.SetStatus(CA3_DEEP, "V_m",
                    _rng_vm.normal(-64.7, 4.0, N_ca3_deep).clip(-72,-55).tolist())
 
-    CA3_INT_SUP  = nest.Create("izhikevich", N_ca3_int_sup,  params=het_params(basket_params, N_ca3_int_sup, _rng_vm))
-    CA3_INT_DEEP = nest.Create("izhikevich", N_ca3_int_deep, params=het_params(basket_params, N_ca3_int_deep, _rng_vm))
+    CA3_INT_SUP  = sim.Create("izhikevich", N_ca3_int_sup,  params=het_params(basket_params, N_ca3_int_sup, _rng_vm))
+    CA3_INT_DEEP = sim.Create("izhikevich", N_ca3_int_deep, params=het_params(basket_params, N_ca3_int_deep, _rng_vm))
 
     # -------------------------------------------------------------------------
     # Background inputs (one_to_one Poisson — cheap, no bottleneck)
@@ -1219,8 +1219,8 @@ def build_replay_network(
     d_fast = 1.5;  d_slow = 3.0
 
     def _drive(n, rate, target, weight, delay, compensate=True):
-        gen = nest.Create("poisson_generator", n, params={"rate": float(rate)})
-        nest.Connect(gen, target, conn_spec="one_to_one",
+        gen = sim.Create("poisson_generator", n, params={"rate": float(rate)})
+        sim.Connect(gen, target, conn_spec="one_to_one",
                      syn_spec={"weight": (wcomp_w(weight) if compensate
                                           else float(weight)),
                                "delay": float(delay)})
@@ -1246,9 +1246,9 @@ def build_replay_network(
         if ca3_tonic_rate_sup > 0:
             _tr = _rng_vm.normal(ca3_tonic_rate_sup, 100.0,
                                  N_ca3_sup).clip(400.0, 1400.0)
-            _tg = nest.Create("poisson_generator", N_ca3_sup)
-            nest.SetStatus(_tg, "rate", _tr.tolist())
-            nest.Connect(_tg, CA3_SUP, conn_spec="one_to_one",
+            _tg = sim.Create("poisson_generator", N_ca3_sup)
+            sim.SetStatus(_tg, "rate", _tr.tolist())
+            sim.Connect(_tg, CA3_SUP, conn_spec="one_to_one",
                          syn_spec={"weight": wcomp_w(ca3_tonic_weight), "delay": d_fast})
         if ca3_tonic_rate_deep > 0:
             _drive(N_ca3_deep, ca3_tonic_rate_deep, CA3_DEEP, ca3_tonic_weight, d_fast)
@@ -1256,9 +1256,9 @@ def build_replay_network(
         # DG→CA3 SUP: heterogeneous rates (σ=100 Hz) to spread membrane potentials
         _dg_rates_sup = _rng_vm.normal(rate_dg_ca3_sup, 100.0,
                                         N_ca3_sup).clip(400.0, 1400.0)
-        _dg_gen_sup   = nest.Create("poisson_generator", N_ca3_sup)
-        nest.SetStatus(_dg_gen_sup, "rate", _dg_rates_sup.tolist())
-        nest.Connect(_dg_gen_sup, CA3_SUP, conn_spec="one_to_one",
+        _dg_gen_sup   = sim.Create("poisson_generator", N_ca3_sup)
+        sim.SetStatus(_dg_gen_sup, "rate", _dg_rates_sup.tolist())
+        sim.Connect(_dg_gen_sup, CA3_SUP, conn_spec="one_to_one",
                      syn_spec={"weight": 3.0, "delay": d_fast})
         # DG→CA3 DEEP: uniform (smaller pop, less impact on replay clarity)
         _drive(N_ca3_deep,     rate_dg_ca3_deep,        CA3_DEEP,     1.0, d_fast)
@@ -1281,7 +1281,7 @@ def build_replay_network(
         ]:
             th = maybe_make_theta_generators(len(pop), theta_mean, theta_amp, theta_hz)
             if th is not None:
-                nest.Connect(th, pop, conn_spec="one_to_one",
+                sim.Connect(th, pop, conn_spec="one_to_one",
                              syn_spec={"weight": float(w_th), "delay": 1.0})
 
     # -------------------------------------------------------------------------
@@ -1306,8 +1306,8 @@ def build_replay_network(
             sharpwave_rate=swr_sharpwave_rate,
             ripple_rate_mean=swr_ripple_mean, ripple_rate_amp=swr_ripple_amp,
             ripple_hz=swr_ripple_hz)
-        nest.Connect(sw_sh_sup,  CA3_SUP, conn_spec="one_to_one", syn_spec={"weight": wcomp_w(0.35), "delay": 1.0})
-        nest.Connect(sw_rip_sup, CA3_SUP, conn_spec="one_to_one", syn_spec={"weight": wcomp_w(0.15), "delay": 1.0})
+        sim.Connect(sw_sh_sup,  CA3_SUP, conn_spec="one_to_one", syn_spec={"weight": wcomp_w(0.35), "delay": 1.0})
+        sim.Connect(sw_rip_sup, CA3_SUP, conn_spec="one_to_one", syn_spec={"weight": wcomp_w(0.15), "delay": 1.0})
 
         sw_sh_deep, sw_rip_deep = make_swr_event_generators(
             n=N_ca3_deep, start_ms=swr_s, stop_ms=swr_e,
@@ -1315,21 +1315,21 @@ def build_replay_network(
             ripple_rate_mean=swr_ripple_mean * 0.35,
             ripple_rate_amp=swr_ripple_amp   * 0.35,
             ripple_hz=swr_ripple_hz)
-        nest.Connect(sw_sh_deep,  CA3_DEEP, conn_spec="one_to_one", syn_spec={"weight": wcomp_w(0.35), "delay": 1.0})
-        nest.Connect(sw_rip_deep, CA3_DEEP, conn_spec="one_to_one", syn_spec={"weight": wcomp_w(0.15), "delay": 1.0})
+        sim.Connect(sw_sh_deep,  CA3_DEEP, conn_spec="one_to_one", syn_spec={"weight": wcomp_w(0.35), "delay": 1.0})
+        sim.Connect(sw_rip_deep, CA3_DEEP, conn_spec="one_to_one", syn_spec={"weight": wcomp_w(0.15), "delay": 1.0})
 
         _, sw_rip_int_sup = make_swr_event_generators(
             n=N_ca3_int_sup, start_ms=swr_s, stop_ms=swr_e,
             sharpwave_rate=0.0, ripple_rate_mean=swr_ripple_mean,
             ripple_rate_amp=swr_ripple_amp, ripple_hz=swr_ripple_hz)
-        nest.Connect(sw_rip_int_sup, CA3_INT_SUP, conn_spec="one_to_one",
+        sim.Connect(sw_rip_int_sup, CA3_INT_SUP, conn_spec="one_to_one",
                      syn_spec={"weight": 0.60, "delay": 1.0})
 
         _, sw_rip_int_deep = make_swr_event_generators(
             n=N_ca3_int_deep, start_ms=swr_s, stop_ms=swr_e,
             sharpwave_rate=0.0, ripple_rate_mean=swr_ripple_mean,
             ripple_rate_amp=swr_ripple_amp, ripple_hz=swr_ripple_hz)
-        nest.Connect(sw_rip_int_deep, CA3_INT_DEEP, conn_spec="one_to_one",
+        sim.Connect(sw_rip_int_deep, CA3_INT_DEEP, conn_spec="one_to_one",
                      syn_spec={"weight": 0.60, "delay": 1.0})
 
         sw_sh_c1, sw_rip_c1 = make_swr_event_generators(
@@ -1337,15 +1337,15 @@ def build_replay_network(
             sharpwave_rate=swr_sharpwave_rate * 0.6,
             ripple_rate_mean=swr_ripple_mean * 0.6,
             ripple_rate_amp=swr_ripple_amp   * 0.6, ripple_hz=swr_ripple_hz)
-        nest.Connect(sw_sh_c1,  CA1_PYR, conn_spec="one_to_one", syn_spec={"weight": wcomp_w(0.20), "delay": 1.0})
-        nest.Connect(sw_rip_c1, CA1_PYR, conn_spec="one_to_one", syn_spec={"weight": wcomp_w(0.10), "delay": 1.0})
+        sim.Connect(sw_sh_c1,  CA1_PYR, conn_spec="one_to_one", syn_spec={"weight": wcomp_w(0.20), "delay": 1.0})
+        sim.Connect(sw_rip_c1, CA1_PYR, conn_spec="one_to_one", syn_spec={"weight": wcomp_w(0.10), "delay": 1.0})
 
         _, sw_rip_c1b = make_swr_event_generators(
             n=N_ca1_basket, start_ms=swr_s, stop_ms=swr_e,
             sharpwave_rate=0.0,
             ripple_rate_mean=swr_ripple_mean * 0.8,
             ripple_rate_amp=swr_ripple_amp   * 0.8, ripple_hz=swr_ripple_hz)
-        nest.Connect(sw_rip_c1b, CA1_BASKET, conn_spec="one_to_one",
+        sim.Connect(sw_rip_c1b, CA1_BASKET, conn_spec="one_to_one",
                      syn_spec={"weight": 0.55, "delay": 1.0})
 
     # =========================================================================
@@ -1517,30 +1517,30 @@ def build_replay_network(
                 drive_dur_ms=scaffold_dur_ms, weight=scaffold_weight)
 
     # ---- Recorders ----------------------------------------------------------
-    spk_ca1_pyr      = nest.Create("spike_recorder")
-    spk_ca1_ba       = nest.Create("spike_recorder")
-    spk_ca1_olm      = nest.Create("spike_recorder")
-    spk_ca3_sup      = nest.Create("spike_recorder")
-    spk_ca3_deep     = nest.Create("spike_recorder")
-    spk_ca3_int_sup  = nest.Create("spike_recorder")
-    spk_ca3_int_deep = nest.Create("spike_recorder")
+    spk_ca1_pyr      = sim.Create("spike_recorder")
+    spk_ca1_ba       = sim.Create("spike_recorder")
+    spk_ca1_olm      = sim.Create("spike_recorder")
+    spk_ca3_sup      = sim.Create("spike_recorder")
+    spk_ca3_deep     = sim.Create("spike_recorder")
+    spk_ca3_int_sup  = sim.Create("spike_recorder")
+    spk_ca3_int_deep = sim.Create("spike_recorder")
 
-    nest.Connect(CA1_PYR,      spk_ca1_pyr)
-    nest.Connect(CA1_BASKET,   spk_ca1_ba)
-    nest.Connect(CA1_OLM,      spk_ca1_olm)
-    nest.Connect(CA3_SUP,      spk_ca3_sup)
-    nest.Connect(CA3_DEEP,     spk_ca3_deep)
-    nest.Connect(CA3_INT_SUP,  spk_ca3_int_sup)
-    nest.Connect(CA3_INT_DEEP, spk_ca3_int_deep)
+    sim.Connect(CA1_PYR,      spk_ca1_pyr)
+    sim.Connect(CA1_BASKET,   spk_ca1_ba)
+    sim.Connect(CA1_OLM,      spk_ca1_olm)
+    sim.Connect(CA3_SUP,      spk_ca3_sup)
+    sim.Connect(CA3_DEEP,     spk_ca3_deep)
+    sim.Connect(CA3_INT_SUP,  spk_ca3_int_sup)
+    sim.Connect(CA3_INT_DEEP, spk_ca3_int_deep)
 
     # Fixed small sample for Vm — does NOT grow with scale
     try:
-        vm = nest.Create("multimeter", params={"record_from": ["V_m", "U_m"], "interval": 0.2})
+        vm = sim.Create("multimeter", params={"record_from": ["V_m", "U_m"], "interval": 0.2})
     except Exception:
-        vm = nest.Create("multimeter", params={"record_from": ["V_m"], "interval": 0.2})
-    nest.Connect(vm, CA1_PYR[:5])
-    nest.Connect(vm, CA3_SUP[:5])
-    nest.Connect(vm, CA3_DEEP[:min(3, N_ca3_deep)])
+        vm = sim.Create("multimeter", params={"record_from": ["V_m"], "interval": 0.2})
+    sim.Connect(vm, CA1_PYR[:5])
+    sim.Connect(vm, CA3_SUP[:5])
+    sim.Connect(vm, CA3_DEEP[:min(3, N_ca3_deep)])
 
     print(f"\n  Total build time: {time.perf_counter()-t0:.1f}s")
 
@@ -1772,7 +1772,7 @@ def build_dg_module(
     environment has no NEST); they are set from the confirmed single-neuron f-I
     gains and the removed proxy's drive budget, and flagged for tuning.
     """
-    import nest
+    import simbackend as sim
     t0 = time.perf_counter()
 
     print(f"\n  [DGModule] Building dentate gyrus")
@@ -1787,13 +1787,13 @@ def build_dg_module(
 
     _rng = np.random.default_rng(seed_connect + 7)
 
-    GC = nest.Create("izhikevich", N_gc, params=het_params(gc_params, N_gc, _rng))
+    GC = sim.Create("izhikevich", N_gc, params=het_params(gc_params, N_gc, _rng))
     # V_m heterogeneity → graded excitability → sparse, ordered recruitment
-    nest.SetStatus(GC, "V_m",
+    sim.SetStatus(GC, "V_m",
                    _rng.normal(-65.0, 4.0, N_gc).clip(-75, -55).tolist())
-    MC_LOW  = nest.Create("izhikevich", N_mc_low,  params=het_params(mc_low_params, N_mc_low, _rng))
-    MC_HIGH = nest.Create("izhikevich", N_mc_high, params=het_params(mc_high_params, N_mc_high, _rng))
-    BASKET  = nest.Create("izhikevich", N_basket,  params=het_params(basket_params, N_basket, _rng))
+    MC_LOW  = sim.Create("izhikevich", N_mc_low,  params=het_params(mc_low_params, N_mc_low, _rng))
+    MC_HIGH = sim.Create("izhikevich", N_mc_high, params=het_params(mc_high_params, N_mc_high, _rng))
+    BASKET  = sim.Create("izhikevich", N_basket,  params=het_params(basket_params, N_basket, _rng))
 
     d_fast = 1.5
 
@@ -1828,9 +1828,9 @@ def build_dg_module(
     pp_scale  = pp_residual if ec_driven else 1.0
     pp_rates = _rng.normal(pp_rate_mean * pp_scale, pp_rate_sigma * pp_scale,
                            N_gc).clip(5.0, None)
-    pp = nest.Create("poisson_generator", N_gc)
-    nest.SetStatus(pp, "rate", pp_rates.tolist())
-    nest.Connect(pp, GC, conn_spec="one_to_one",
+    pp = sim.Create("poisson_generator", N_gc)
+    sim.SetStatus(pp, "rate", pp_rates.tolist())
+    sim.Connect(pp, GC, conn_spec="one_to_one",
                  syn_spec={"weight": float(pp_weight), "delay": d_fast})
     if ec_driven:
         K_pp = K("ec_dg_pp", len(ec_lii))
@@ -1870,8 +1870,8 @@ def build_dg_module(
     for pop, rate, w, comp in [(MC_LOW, rate_bg_mc, w_bg_mc, False),
                                (MC_HIGH, rate_bg_mc, w_bg_mc, False),
                                (BASKET, rate_bg_basket, w_bg_basket, False)]:
-        bg = nest.Create("poisson_generator", len(pop), params={"rate": float(rate)})
-        nest.Connect(bg, pop, conn_spec="one_to_one",
+        bg = sim.Create("poisson_generator", len(pop), params={"rate": float(rate)})
+        sim.Connect(bg, pop, conn_spec="one_to_one",
                      syn_spec={"weight": wcomp_w(w) if comp else float(w),
                                "delay": d_fast})
 
@@ -1933,14 +1933,14 @@ def build_dg_module(
           f"in {time.perf_counter()-t_mf:.2f}s")
 
     # ---- Recorders ----------------------------------------------------------
-    spk_gc      = nest.Create("spike_recorder")
-    spk_mc_low  = nest.Create("spike_recorder")
-    spk_mc_high = nest.Create("spike_recorder")
-    spk_basket  = nest.Create("spike_recorder")
-    nest.Connect(GC,      spk_gc)
-    nest.Connect(MC_LOW,  spk_mc_low)
-    nest.Connect(MC_HIGH, spk_mc_high)
-    nest.Connect(BASKET,  spk_basket)
+    spk_gc      = sim.Create("spike_recorder")
+    spk_mc_low  = sim.Create("spike_recorder")
+    spk_mc_high = sim.Create("spike_recorder")
+    spk_basket  = sim.Create("spike_recorder")
+    sim.Connect(GC,      spk_gc)
+    sim.Connect(MC_LOW,  spk_mc_low)
+    sim.Connect(MC_HIGH, spk_mc_high)
+    sim.Connect(BASKET,  spk_basket)
 
     print(f"  [DGModule] Total DG build: {time.perf_counter()-t0:.1f}s")
 
@@ -1966,7 +1966,7 @@ def dg_pattern_separation_stats(dg_module, sim_ms, window=None):
     Returns a dict: active_fraction, n_active, n_gc, mean_rate_hz,
     plus a PASS/FLAG verdict against the 2-4% sparse-coding band.
     """
-    ev = nest.GetStatus(dg_module.spk_gc, "events")[0]
+    ev = sim.GetStatus(dg_module.spk_gc, "events")[0]
     t = np.asarray(ev["times"]);  s = np.asarray(ev["senders"])
     if window is not None:
         m = (t >= window[0]) & (t <= window[1])
@@ -2000,12 +2000,12 @@ def run_dg_residual_refresh_hook(dg_module, rng):
     (this refreshes the ORIGINAL population; neurogenesis cohorts' own
     residual generators are refreshed inside run_dg_neurogenesis_hook).
     """
-    import nest
+    import simbackend as sim
     n = len(dg_module.pp_gen)
     rates = rng.normal(dg_module.pp_rate_mean * dg_module.pp_scale,
                         dg_module.pp_rate_sigma * dg_module.pp_scale,
                         n).clip(5.0, None)
-    nest.SetStatus(dg_module.pp_gen, "rate", rates.tolist())
+    sim.SetStatus(dg_module.pp_gen, "rate", rates.tolist())
 
 
 # ---- Phase 8: DG neurogenesis (adult-born granule cell turnover) ----------
@@ -2093,11 +2093,11 @@ def _dg_cache_cohort_incoming(gc_pop, ec_lii, basket_pop):
     run_dg_neurogenesis_hook (every later cohort), so the two never drift
     out of sync with each other.
     """
-    import nest
-    in_conns     = nest.GetConnections(target=gc_pop)
-    src          = np.array(nest.GetStatus(in_conns, "source"), dtype=np.int64)
-    tgt          = np.array(nest.GetStatus(in_conns, "target"), dtype=np.int64)
-    base_weights = np.array(nest.GetStatus(in_conns, "weight"), dtype=np.float64)
+    import simbackend as sim
+    in_conns     = sim.GetConnections(target=gc_pop)
+    src          = np.array(sim.GetStatus(in_conns, "source"), dtype=np.int64)
+    tgt          = np.array(sim.GetStatus(in_conns, "target"), dtype=np.int64)
+    base_weights = np.array(sim.GetStatus(in_conns, "weight"), dtype=np.float64)
     ec_map  = {g: i for i, g in enumerate(ec_lii.tolist())}
     bsk_ids = set(basket_pop.tolist())
     gc_map  = {g: i for i, g in enumerate(gc_pop.tolist())}
@@ -2173,7 +2173,7 @@ def run_dg_neurogenesis_hook(hook, dg_module, epoch, rate):
     Call once per epoch (including epoch 0), BEFORE that epoch's
     nest.Simulate(), so newly created cells are wired in time to participate.
     """
-    import nest
+    import simbackend as sim
 
     def _intrinsic_state(age):
         frac = _dg_cohort_age_frac(hook, age)
@@ -2185,8 +2185,8 @@ def run_dg_neurogenesis_hook(hook, dg_module, epoch, rate):
     n_new = max(1, round(rate * hook.original_n_gc))
     inhib0, ie0 = _intrinsic_state(0)
     gc_params = dict(a=0.02, b=0.2, c=-65.0, d=8.0, V_m=-65.0, U_m=-13.0, I_e=ie0)
-    new_gc = nest.Create("izhikevich", n_new, params=gc_params)
-    nest.SetStatus(new_gc, "V_m",
+    new_gc = sim.Create("izhikevich", n_new, params=gc_params)
+    sim.SetStatus(new_gc, "V_m",
                    hook.rng.normal(-65.0, 4.0, n_new).clip(-75, -55).tolist())
 
     # perforant path IN: plain baseline weight, same as the mature
@@ -2201,9 +2201,9 @@ def run_dg_neurogenesis_hook(hook, dg_module, epoch, rate):
 
     pp_rates = hook.rng.normal(hook.pp_rate_mean, hook.pp_rate_sigma,
                                n_new).clip(5.0, None)
-    pp = nest.Create("poisson_generator", n_new)
-    nest.SetStatus(pp, "rate", pp_rates.tolist())
-    nest.Connect(pp, new_gc, conn_spec="one_to_one",
+    pp = sim.Create("poisson_generator", n_new)
+    sim.SetStatus(pp, "rate", pp_rates.tolist())
+    sim.Connect(pp, new_gc, conn_spec="one_to_one",
                  syn_spec={"weight": float(hook.pp_weight), "delay": 1.5})
 
     K_basket_gc = K("dg_basket_gc", len(dg_module.BASKET))
@@ -2255,7 +2255,7 @@ def run_dg_neurogenesis_hook(hook, dg_module, epoch, rate):
     # Grow the module: every existing consumer (dg_pattern_separation_stats,
     # pattern_discrimination) just reads dg_module.GC/N_gc, so this is the
     # only change needed for them to see the new cells automatically.
-    nest.Connect(new_gc, dg_module.spk_gc)
+    sim.Connect(new_gc, dg_module.spk_gc)
     dg_module.GC = dg_module.GC + new_gc
     dg_module.N_gc = dg_module.N_gc + n_new
 
@@ -2277,7 +2277,7 @@ def run_dg_neurogenesis_hook(hook, dg_module, epoch, rate):
         # winner-take-all just as it did for the original population.
         pp_rates = hook.rng.normal(hook.pp_rate_mean, hook.pp_rate_sigma,
                                    len(coh.pp_gen)).clip(5.0, None)
-        nest.SetStatus(coh.pp_gen, "rate", pp_rates.tolist())
+        sim.SetStatus(coh.pp_gen, "rate", pp_rates.tolist())
         if age > hook.maturation_epochs:
             continue  # intrinsic properties already relaxed to baseline
         inhib_scale, ie_val = _intrinsic_state(age)
@@ -2285,8 +2285,8 @@ def run_dg_neurogenesis_hook(hook, dg_module, epoch, rate):
         # SetStatus on the full collection -- non-aged entries (perforant
         # path, Poisson residual, MC associational input) write back their
         # own unchanged value as a no-op, same as run_homeostasis_hook.
-        nest.SetStatus(coh.in_conns, "weight", coh.base_weights.tolist())
-        nest.SetStatus(coh.gc, "I_e", float(ie_val))
+        sim.SetStatus(coh.in_conns, "weight", coh.base_weights.tolist())
+        sim.SetStatus(coh.gc, "I_e", float(ie_val))
 
     print(f"  [DGNeurogenesis] epoch {epoch}: +{n_new} new GC (I_e={ie0:+.1f}), "
           f"total N_gc={dg_module.N_gc:,}, {len(hook.cohorts)} cohort(s) tracked")
@@ -2330,10 +2330,10 @@ def run_dg_perforant_plasticity_hook(hook, dg_module, ec_module,
     """Hebbian EC LII -> GC learning, per cohort. Call twice per epoch
     (forward + reverse SWR window), same as run_stc_hook/run_mpfc_assoc_hook.
     """
-    import nest
+    import simbackend as sim
 
     def fired(spk_rec, pop):
-        ev = nest.GetStatus(spk_rec, "events")[0]
+        ev = sim.GetStatus(spk_rec, "events")[0]
         t = np.asarray(ev["times"]); s = np.asarray(ev["senders"])
         act = np.unique(s[(t >= t_swr_start) & (t <= t_swr_end)])
         idx = {g: i for i, g in enumerate(pop.tolist())}
@@ -2363,7 +2363,7 @@ def run_dg_perforant_plasticity_hook(hook, dg_module, ec_module,
         # SetStatus on the full collection -- non-pp entries (inhibition,
         # Poisson residual, MC associational input) write back their own
         # unchanged value as a no-op, same as run_homeostasis_hook.
-        nest.SetStatus(coh.in_conns, "weight", coh.base_weights.tolist())
+        sim.SetStatus(coh.in_conns, "weight", coh.base_weights.tolist())
 
 
 # ============================================================================
@@ -2396,11 +2396,11 @@ def make_partial_cue(group_cells, cue_frac, start_ms, dur_ms,
     n_cue   = max(1, int(round(cue_frac * len(cells))))
     cued    = np.sort(rng.choice(cells, size=n_cue, replace=False))
     uncued  = np.setdiff1d(cells, cued)
-    gens = nest.Create("poisson_generator", len(cued), params={
+    gens = sim.Create("poisson_generator", len(cued), params={
         "rate": float(rate), "start": float(start_ms),
         "stop":  float(start_ms + dur_ms),
     })
-    nest.Connect(gens, nest.NodeCollection([int(i) for i in cued]),
+    sim.Connect(gens, sim.NodeCollection([int(i) for i in cued]),
                  conn_spec="one_to_one",
                  syn_spec={"weight": float(weight), "delay": float(delay)})
     return cued, uncued
@@ -2449,11 +2449,11 @@ def pattern_recall_specificity(mpfc_module, epoch_pattern, n_epochs, epoch_ms,
 
     Schedules the cues and simulates; returns a dict of results.
     """
-    import nest
+    import simbackend as sim
     rng = np.random.default_rng(seed)
     gids = np.asarray(mpfc_module.population.tolist(), dtype=np.int64)
     g0, N = int(gids[0]), len(gids)
-    ev = nest.GetStatus(mpfc_module.spike_rec, "events")[0]
+    ev = sim.GetStatus(mpfc_module.spike_rec, "events")[0]
     t, snd = np.asarray(ev["times"]), np.asarray(ev["senders"])
     ep = (t // epoch_ms).astype(int)
     r = t - ep * epoch_ms
@@ -2486,9 +2486,9 @@ def pattern_recall_specificity(mpfc_module, epoch_pattern, n_epochs, epoch_ms,
         c, _u = cortical_recall_probe(mpfc_module, assemblies[q], cue_frac,
                                       float(t_cues[k]), rng=rng)
         cued.append(c)
-    nest.Simulate(float(t_cues[-1] - nest.GetKernelStatus("biological_time")
+    sim.Simulate(float(t_cues[-1] - sim.GetKernelStatus("biological_time")
                         + iti_ms))
-    ev = nest.GetStatus(mpfc_module.spike_rec, "events")[0]
+    ev = sim.GetStatus(mpfc_module.spike_rec, "events")[0]
     t, snd = np.asarray(ev["times"]), np.asarray(ev["senders"])
 
     def resp(w0, w1, exclude):
@@ -2603,7 +2603,7 @@ def run_pattern_completion(cfg, n_threads, cue_fracs,
 
     print(f"  [PatternCompletion] simulating {total_ms:.0f} ms "
           f"({len(cues)} cues, gap={gap_ms:.0f} ms)...")
-    nest.Simulate(total_ms)
+    sim.Simulate(total_ms)
 
     t_sup, s_sup = _get_spikes(net["spk_ca3_sup"])
     results = []
@@ -2829,7 +2829,7 @@ def build_ec_lii(
     -------
     ECModule — holds the synapse collection handle for the STC hook.
     """
-    import nest
+    import simbackend as sim
 
     t0    = time.perf_counter()
     N_ca1 = len(ca1_pyr)
@@ -2841,7 +2841,7 @@ def build_ec_lii(
           f"K={K}  expected_synapses={n_exp:,}")
 
     # ---- Stellate cell (Izhikevich) ----------------------------------------
-    EC_LII = nest.Create("izhikevich", N_ec_lii,
+    EC_LII = sim.Create("izhikevich", N_ec_lii,
                          params=het_params(dict(a=0.02, b=0.2, c=-65.0, d=6.0,
                                                 V_m=-65.0, U_m=-13.0, I_e=0.0),
                                            N_ec_lii, np.random.default_rng(21)))
@@ -2849,7 +2849,7 @@ def build_ec_lii(
     # uniform V_m every cell is identical, so a synchronous volley fires all of
     # them or none -- nothing for lateral inhibition to select between, and no
     # sparse code can form however strong that inhibition is.
-    nest.SetStatus(EC_LII, "V_m",
+    sim.SetStatus(EC_LII, "V_m",
                    np.random.default_rng(11).normal(-65.0, 4.0, N_ec_lii)
                    .clip(-75, -55).tolist())
     # PERSISTENT excitability spread. V_m heterogeneity above is only a
@@ -2858,13 +2858,13 @@ def build_ec_lii(
     # gap itself (gap = 25*sqrt(0.64 - 0.16*I_e)), so with I_e ~ N(0.0, 1.5) the
     # gap spans ~15-24 mV and a near-threshold volley recruits only the
     # excitable tail.
-    nest.SetStatus(EC_LII, "I_e",
+    sim.SetStatus(EC_LII, "I_e",
                    np.random.default_rng(21).normal(0.0, 1.5, len(EC_LII))
                    .clip(-3.0, 3.0).tolist())
 
     # ---- Tonic background drive --------------------------------------------
-    bg = nest.Create("poisson_generator", N_ec_lii, params={"rate": float(rate_bg)})
-    nest.Connect(bg, EC_LII, conn_spec="one_to_one",
+    bg = sim.Create("poisson_generator", N_ec_lii, params={"rate": float(rate_bg)})
+    sim.Connect(bg, EC_LII, conn_spec="one_to_one",
                  syn_spec={"weight": float(w_bg), "delay": 1.0})
 
     # ---- CA1 → EC : fixed_indegree + static_synapse ------------------------
@@ -2890,7 +2890,7 @@ def build_ec_lii(
             pre_group_of=np.arange(len(ca1_pyr)) % n_groups,
             post_group_of=ec_group_of)
     else:
-        nest.Connect(
+        sim.Connect(
             ca1_pyr,
             EC_LII,
             conn_spec={"rule": "fixed_indegree", "indegree": K},
@@ -2914,8 +2914,8 @@ def build_ec_lii(
               f"fixed_indegree + static_synapse on this build.")
 
     # ---- Spike recorder ----------------------------------------------------
-    spk_ec = nest.Create("spike_recorder")
-    nest.Connect(EC_LII, spk_ec)
+    spk_ec = sim.Create("spike_recorder")
+    sim.Connect(EC_LII, spk_ec)
 
     print(f"  [ECModule] Total EC build: {time.perf_counter()-t0:.1f}s")
 
@@ -3029,14 +3029,14 @@ def get_conns_between(pre, post):
 
     Returns (conns, src_gids, tgt_gids, weights) for the pre -> post subset.
     """
-    import nest
-    out = nest.GetConnections(source=pre)
+    import simbackend as sim
+    out = sim.GetConnections(source=pre)
     if len(out) == 0:
         return out, np.empty(0, np.int64), np.empty(0, np.int64), np.empty(0, np.float32)
     tgt = np.asarray(out.get("target"), dtype=np.int64).reshape(-1)
     idx = np.flatnonzero(np.isin(tgt, np.asarray(post.tolist(), dtype=np.int64)))
     datums = out._datum
-    conns = nest.SynapseCollection([datums[i] for i in idx])
+    conns = sim.SynapseCollection([datums[i] for i in idx])
     if len(conns) == 0:
         return conns, np.empty(0, np.int64), np.empty(0, np.int64), np.empty(0, np.float32)
     src = np.asarray(conns.get("source"), dtype=np.int64).reshape(-1)
@@ -3084,7 +3084,7 @@ def build_ec_lv(
     Weight is intentionally sub-maximal (0.6 mV) so that feedback
     alone cannot drive CA3 — it only amplifies ongoing replay activity.
     """
-    import nest, time as _time
+    import simbackend as sim, time as _time
 
     t0 = _time.perf_counter()
     N_lii = len(ec_lii_pop)
@@ -3096,11 +3096,11 @@ def build_ec_lv(
     print(f"  [ECLVModule]   N_lv={N_lv:,}  N_ca1={N_ca1:,}  N_lii={N_lii:,}  N_ca3={N_ca3:,}")
 
     # Izhikevich layer-5 intrinsic-burst params
-    EC_LV = nest.Create("izhikevich", N_lv,
+    EC_LV = sim.Create("izhikevich", N_lv,
                         params=het_params(dict(a=0.02, b=0.2, c=-55.0, d=4.0,
                                                V_m=-64.7, U_m=-13.0, I_e=3.0),
                                           N_lv, np.random.default_rng(22)))
-    nest.SetStatus(EC_LV, "V_m",
+    sim.SetStatus(EC_LV, "V_m",
                    np.random.default_rng(12).normal(-64.7, 4.0, N_lv)
                    .clip(-75, -55).tolist())
     # PERSISTENT excitability spread. V_m heterogeneity above is only a
@@ -3109,7 +3109,7 @@ def build_ec_lv(
     # gap itself (gap = 25*sqrt(0.64 - 0.16*I_e)), so with I_e ~ N(3.0, 1.5) the
     # gap spans ~15-24 mV and a near-threshold volley recruits only the
     # excitable tail.
-    nest.SetStatus(EC_LV, "I_e",
+    sim.SetStatus(EC_LV, "I_e",
                    np.random.default_rng(22).normal(3.0, 1.5, len(EC_LV))
                    .clip(0.0, 6.0).tolist())
 
@@ -3126,7 +3126,7 @@ def build_ec_lv(
                                   pre_group_of=(np.arange(len(pre)) % n_groups
                                                 if pre_groups is None else pre_groups))
         else:
-            nest.Connect(pre, EC_LV,
+            sim.Connect(pre, EC_LV,
                          conn_spec={"rule": "fixed_indegree", "indegree": K},
                          syn_spec={"synapse_model": "static_synapse",
                                    "weight": w, "delay": d})
@@ -3158,14 +3158,14 @@ def build_ec_lv(
                               pre_group_of=np.arange(N_lv) % n_groups,
                               post_group_of=np.arange(N_ca3) // (N_ca3 // n_groups))
     else:
-        nest.Connect(EC_LV, ca3_sup,
+        sim.Connect(EC_LV, ca3_sup,
                      conn_spec={"rule": "fixed_indegree", "indegree": K3},
                      syn_spec={"synapse_model": "static_synapse",
                                "weight": float(w_lv_ca3), "delay": float(delay_ca3)})
     print(f"  [ECLVModule] LV→CA3: {N_ca3*K3:,} synapses in {_time.perf_counter()-t_c:.2f}s")
 
-    spk_lv = nest.Create("spike_recorder")
-    nest.Connect(EC_LV, spk_lv)
+    spk_lv = sim.Create("spike_recorder")
+    sim.Connect(EC_LV, spk_lv)
 
     # Cache the incoming synapses now, for lesion_hippocampus() (see the
     # ECLVModule docstring: this scan gets dramatically more expensive once DG
@@ -3256,7 +3256,7 @@ def build_mpfc(
     after repeated hippocampal replay + EC LV consolidation, these weights
     encode the replayed sequence in a hippocampus-independent form.
     """
-    import nest, time as _time
+    import simbackend as sim, time as _time
 
     t0 = _time.perf_counter()
     N_lv  = len(ec_lv_pop)
@@ -3267,11 +3267,11 @@ def build_mpfc(
     print(f"  [MPFCModule]   N_mpfc={N_pfc:,}  N_lv={N_lv:,}  K={K}")
 
     # Izhikevich layer-5 prefrontal: regular spiking, strongly adapting
-    MPFC = nest.Create("izhikevich", N_pfc,
+    MPFC = sim.Create("izhikevich", N_pfc,
                        params=het_params(dict(a=0.02, b=0.2, c=-65.0, d=8.0,
                                               V_m=-65.0, U_m=-13.0, I_e=0.0),
                                          N_pfc, np.random.default_rng(23)))
-    nest.SetStatus(MPFC, "V_m",
+    sim.SetStatus(MPFC, "V_m",
                    np.random.default_rng(13).normal(-65.0, 4.0, N_pfc)
                    .clip(-75, -55).tolist())
     # PERSISTENT excitability spread. V_m heterogeneity above is only a
@@ -3280,7 +3280,7 @@ def build_mpfc(
     # gap itself (gap = 25*sqrt(0.64 - 0.16*I_e)), so with I_e ~ N(0.0, 1.5) the
     # gap spans ~15-24 mV and a near-threshold volley recruits only the
     # excitable tail.
-    nest.SetStatus(MPFC, "I_e",
+    sim.SetStatus(MPFC, "I_e",
                    np.random.default_rng(23).normal(0.0, 1.5, len(MPFC))
                    .clip(-3.0, 3.0).tolist())
 
@@ -3298,7 +3298,7 @@ def build_mpfc(
                               seed=seed_connect + 17,
                               pre_group_of=np.arange(len(ec_lv_pop)) % n_groups)
     else:
-        nest.Connect(ec_lv_pop, MPFC,
+        sim.Connect(ec_lv_pop, MPFC,
                      conn_spec={"rule": "fixed_indegree", "indegree": K},
                      syn_spec={"synapse_model": "static_synapse",
                                "weight": _w_lv_pfc,
@@ -3309,7 +3309,7 @@ def build_mpfc(
     MPFC_INT, spk_int, N_int = None, None, 0
     if lateral_inhibition:
         N_int = max(10, int(N_pfc * int_frac))
-        MPFC_INT = nest.Create("izhikevich", N_int,
+        MPFC_INT = sim.Create("izhikevich", N_int,
                                params=het_params(dict(a=0.10, b=0.2, c=-65.0, d=2.0,
                                                       V_m=-65.0, U_m=-13.0, I_e=0.0),
                                                  N_int, np.random.default_rng(24)))
@@ -3337,8 +3337,8 @@ def build_mpfc(
                 RuntimeWarning, stacklevel=2)
         fixed_connect(MPFC,     MPFC_INT, K_ei, w_mpfc_ei, 1.5, compensate=False)
         fixed_connect(MPFC_INT, MPFC,     K_ie, w_mpfc_ie, 1.5)
-        spk_int = nest.Create("spike_recorder")
-        nest.Connect(MPFC_INT, spk_int)
+        spk_int = sim.Create("spike_recorder")
+        sim.Connect(MPFC_INT, spk_int)
         print(f"  [MPFCModule] lateral inhibition: {N_int} FS cells  "
               f"E->I K={K_ei} w={w_mpfc_ei}  I->E K={K_ie} w={w_mpfc_ie}")
     else:
@@ -3358,8 +3358,8 @@ def build_mpfc(
         print(f"  [MPFCModule] recurrent mPFC->mPFC: K={Kr} w={w_rec} "
               f"delay={delay_rec} ms  (substrate for cortical pattern completion)")
 
-    spk_mpfc = nest.Create("spike_recorder")
-    nest.Connect(MPFC, spk_mpfc)
+    spk_mpfc = sim.Create("spike_recorder")
+    sim.Connect(MPFC, spk_mpfc)
     print(f"  [MPFCModule] Total build: {_time.perf_counter()-t0:.1f}s")
 
     return MPFCModule(
@@ -3408,7 +3408,7 @@ class MPFCAssocHook:
 
 def build_mpfc_assoc_hook(mpfc_module, eclv_module) -> MPFCAssocHook:
     """Cache the EC LV -> mPFC synapses once (same pattern as build_stc_hook)."""
-    import nest
+    import simbackend as sim
     t0 = time.perf_counter()
     print("\n  [mPFCAssoc] Fetching EC LV->mPFC synapse collection...")
     # Restrict the collection to EC LV sources. GetConnections(target=mPFC) also
@@ -3447,7 +3447,7 @@ def build_mpfc_recurrent_hook(mpfc_module) -> MPFCAssocHook:
     destroying the lateral inhibition (the bug already fixed once for the
     feedforward hook).
     """
-    import nest
+    import simbackend as sim
     t0 = time.perf_counter()
     print("\n  [mPFCRec] Fetching recurrent mPFC->mPFC synapses...", flush=True)
     # mPFC -> mPFC only, source-side (get_conns_between): EC LV and the
@@ -3476,10 +3476,10 @@ def run_mpfc_assoc_hook(hook, eclv_module, mpfc_module,
 
     Called once per SWR event, after nest.Simulate() for that epoch.
     """
-    import nest
+    import simbackend as sim
 
     def fired(spk_rec, pop):
-        ev = nest.GetStatus(spk_rec, "events")[0]
+        ev = sim.GetStatus(spk_rec, "events")[0]
         t  = np.asarray(ev["times"]); s = np.asarray(ev["senders"])
         act = np.unique(s[(t >= t_swr_start) & (t <= t_swr_end)])
         idx = {g: i for i, g in enumerate(pop.tolist())}
@@ -3508,7 +3508,7 @@ def run_mpfc_assoc_hook(hook, eclv_module, mpfc_module,
     # .tolist() here allocated ~1.5M Python floats per call, 64 calls per run --
     # this, not the (already vectorised) spike lookup, was the dominant cost.
     # NEST accepts a numpy array directly.
-    nest.SetStatus(hook.conns, "weight", hook.w)
+    sim.SetStatus(hook.conns, "weight", hook.w)
 
     hook.n_calls += 1
     # "associated" = potentiated in at least half the replay events so far.
@@ -3572,7 +3572,7 @@ class SchafferSTDPHook:
 
 def build_schaffer_stdp_hook(net) -> SchafferSTDPHook:
     """Cache the CA3 SUP -> CA1 synapses, their weights AND their delays."""
-    import nest
+    import simbackend as sim
     t0 = time.perf_counter()
     print("\n  [SchafferSTDP] Fetching CA1-incoming synapses...", flush=True)
     # target= ONLY. Passing BOTH source and target makes NEST scan every synapse
@@ -3581,12 +3581,12 @@ def build_schaffer_stdp_hook(net) -> SchafferSTDPHook:
     # incoming slots is bounded by CA1's in-degree instead. The CA3->CA1 subset
     # is then masked in numpy, and SetStatus writes the full collection back
     # with unchanged values off-mask (the homeostasis hook does the same).
-    conns = nest.GetConnections(target=net["PYR"])
+    conns = sim.GetConnections(target=net["PYR"])
     n_all = len(conns)
-    w = np.array(nest.GetStatus(conns, "weight"), dtype=np.float32)
-    d = np.array(nest.GetStatus(conns, "delay"),  dtype=np.float32)
-    pg = np.array(nest.GetStatus(conns, "source"), dtype=np.int64)
-    qg = np.array(nest.GetStatus(conns, "target"), dtype=np.int64)
+    w = np.array(sim.GetStatus(conns, "weight"), dtype=np.float32)
+    d = np.array(sim.GetStatus(conns, "delay"),  dtype=np.float32)
+    pg = np.array(sim.GetStatus(conns, "source"), dtype=np.int64)
+    qg = np.array(sim.GetStatus(conns, "target"), dtype=np.int64)
     ca3 = np.array(net["CA3_SUP"].tolist(), dtype=np.int64)
     mask = np.isin(pg, ca3)
     dm = d[mask]
@@ -3603,13 +3603,13 @@ def run_schaffer_stdp_hook(hook, net, t_start, t_end,
                            A_plus=0.008, A_minus=0.0055, tau=20.0,
                            w_min=0.001, w_max=None):
     """Delay-aware pair STDP over one SWR window."""
-    import nest
+    import simbackend as sim
     if w_max is None:
         w_max = 5.0 * max(hook.w_init, 1e-6)
 
     def last_spike(rec):
         """(gids, last_spike_time) as sorted arrays, for vectorised lookup."""
-        ev = nest.GetStatus(rec, "events")[0]
+        ev = sim.GetStatus(rec, "events")[0]
         t = np.asarray(ev["times"]); s = np.asarray(ev["senders"], dtype=np.int64)
         m = (t >= t_start) & (t <= t_end)
         t, s = t[m], s[m]
@@ -3662,7 +3662,7 @@ def run_schaffer_stdp_hook(hook, net, t_start, t_end,
     d_ok[~pot] = -A_minus * np.exp( dt[~pot] / tau)
     dw[ok] = d_ok
     hook.w = np.clip(hook.w + dw, w_min, w_max)
-    nest.SetStatus(hook.conns, "weight", hook.w.tolist())
+    sim.SetStatus(hook.conns, "weight", hook.w.tolist())
 
     hook.n_calls += 1
     _m = hook.mask if hook.mask is not None else slice(None)
@@ -3693,7 +3693,7 @@ def lesion_hippocampus(net, ec_module, eclv_module, stc=None):
     source filtering is then done in numpy. Better still, reuse the handles the
     STC hook already fetched: cost zero.
     """
-    import nest
+    import simbackend as sim
     n = 0
     ca1 = np.asarray(net["PYR"].tolist(), dtype=np.int64)
     for m in (ec_module, eclv_module):
@@ -3702,14 +3702,14 @@ def lesion_hippocampus(net, ec_module, eclv_module, stc=None):
         if stc is not None and m is ec_module and getattr(stc, "conns", None) is not None:
             c = stc.conns                       # already fetched, all CA1->EC
             if len(c):
-                nest.SetStatus(c, "weight", np.zeros(len(c)))
+                sim.SetStatus(c, "weight", np.zeros(len(c)))
                 n += len(c)
             continue
         if getattr(m, "in_conns", None) is not None and getattr(m, "ca1_mask", None) is not None:
             c, keep = m.in_conns, m.ca1_mask    # cached at build time
         else:
             t0 = time.perf_counter()
-            c = nest.GetConnections(target=m.population)
+            c = sim.GetConnections(target=m.population)
             src = np.asarray(c.get("source"), dtype=np.int64)
             keep = np.isin(src, ca1)
             print(f"  [lesion] scanned {len(src):,} incoming in "
@@ -3721,7 +3721,7 @@ def lesion_hippocampus(net, ec_module, eclv_module, stc=None):
         # left at its current value.
         w = np.asarray(c.get("weight"), dtype=float)
         w[keep] = 0.0
-        nest.SetStatus(c, "weight", w)
+        sim.SetStatus(c, "weight", w)
         n += int(keep.sum())
     print(f"  [lesion] CA1->cortex silenced: {n:,} synapses zeroed "
           f"(cortex intact, hippocampus disconnected)")
@@ -3737,16 +3737,16 @@ def cortical_recall_probe(mpfc_module, pattern_cells, cue_frac,
     hippocampus is gone. Returns (cued, uncued) so the caller can score with
     completion_index() once the simulation has run.
     """
-    import nest
+    import simbackend as sim
     rng = rng or np.random.default_rng(0)
     cells = np.asarray([int(c) for c in pattern_cells], dtype=np.int64)
     n_cue = max(1, int(round(cue_frac * len(cells))))
     cued = np.sort(rng.choice(cells, size=n_cue, replace=False))
     uncued = np.setdiff1d(cells, cued)
-    gens = nest.Create("poisson_generator", len(cued), params={
+    gens = sim.Create("poisson_generator", len(cued), params={
         "rate": float(rate), "start": float(t_start),
         "stop": float(t_start + dur_ms)})
-    nest.Connect(gens, nest.NodeCollection([int(c) for c in cued]),
+    sim.Connect(gens, sim.NodeCollection([int(c) for c in cued]),
                  conn_spec="one_to_one",
                  syn_spec={"weight": float(weight), "delay": 1.0})
     return cued, uncued
@@ -3771,7 +3771,7 @@ def pattern_discrimination(net, pops, swr_fwd, swr_rev, epoch_ms, n_epochs):
     out = {}
     for label, pop, rec in pops:
         gids = np.asarray(pop.tolist(), dtype=np.int64)
-        ev   = nest.GetStatus(rec, "events")[0]
+        ev   = sim.GetStatus(rec, "events")[0]
         t    = np.asarray(ev["times"]); s = np.asarray(ev["senders"])
         # active-cell set per epoch (union of that epoch's two SWR windows)
         sets = []
@@ -3891,7 +3891,7 @@ def build_stc_hook(ec_module, w_init_override=None) -> STCHook:
     clipped (RESULTS.md SS22) and lesion_hippocampus() zeroed along with CA1.
     Called once after build_ec_lii(), before the first nest.Simulate().
     """
-    import nest
+    import simbackend as sim
 
     t0 = time.perf_counter()
     print("\n  [STCHook] Fetching CA1→EC synapse collection "
@@ -3990,19 +3990,19 @@ def run_stc_hook(
     6. Write updated weights back to NEST via SetStatus.
     7. Return a summary dict appended to stc.history.
     """
-    import nest
+    import simbackend as sim
 
     t_hook = time.perf_counter()
     stc.n_calls += 1
 
     # ---- 1. Read spike times from this SWR window ---------------------------
     # CA1 spikes — read from spike_recorder (neurons have no "events" key)
-    ev_ca1    = nest.GetStatus(ec_module.ca1_spike_rec, "events")[0]
+    ev_ca1    = sim.GetStatus(ec_module.ca1_spike_rec, "events")[0]
     ca1_t_all = np.array(ev_ca1["times"],   dtype=np.float32)
     ca1_s_all = np.array(ev_ca1["senders"], dtype=np.int64)
 
     # EC spikes
-    ev_ec    = nest.GetStatus(ec_module.spike_rec, "events")[0]
+    ev_ec    = sim.GetStatus(ec_module.spike_rec, "events")[0]
     ec_t_all = np.array(ev_ec["times"],   dtype=np.float32)
     ec_s_all = np.array(ev_ec["senders"], dtype=np.int64)
 
@@ -4103,7 +4103,7 @@ def run_stc_hook(
     n_struct_total = int(stc.struct_done.sum())
 
     # ---- 6. Write weights back to NEST ---------------------------------------
-    nest.SetStatus(stc.conns, "weight", stc.w.tolist())
+    sim.SetStatus(stc.conns, "weight", stc.w.tolist())
 
     # ---- 7. Summary ----------------------------------------------------------
     n_active     = int(active.sum())
@@ -4167,7 +4167,7 @@ def build_homeostasis_hook(net, alpha: float = 0.75):
     This is the same trick the STC hook uses for CA1→EC.
     """
     import dataclasses
-    import nest
+    import simbackend as sim
 
     @dataclasses.dataclass
     class HomeoHook:
@@ -4181,14 +4181,14 @@ def build_homeostasis_hook(net, alpha: float = 0.75):
     print("  [homeo] Querying connections incoming to CA3_SUP (target-only filter)...")
     print("  [homeo] (Schaffer collaterals skipped — 345M synapses, infeasible)")
     t0 = time.perf_counter()
-    all_conns = nest.GetConnections(target=net["CA3_SUP"])
+    all_conns = sim.GetConnections(target=net["CA3_SUP"])
     n_total   = len(all_conns)
     print(f"  [homeo] CA3_SUP incoming scan: {n_total:,} synapses in {time.perf_counter()-t0:.1f}s")
 
     # Pull source GIDs and weights via vectorized GetStatus
     t1 = time.perf_counter()
-    sources = np.array(nest.GetStatus(all_conns, "source"), dtype=np.int64)
-    weights = np.array(nest.GetStatus(all_conns, "weight"), dtype=float)
+    sources = np.array(sim.GetStatus(all_conns, "source"), dtype=np.int64)
+    weights = np.array(sim.GetStatus(all_conns, "weight"), dtype=float)
     print(f"  [homeo] Pulled source GIDs + weights in {time.perf_counter()-t1:.1f}s")
 
     # Build set of CA3_SUP GIDs once (66k entries) for fast membership test
@@ -4219,7 +4219,7 @@ def run_homeostasis_hook(homeo):
     Writes back the full weight vector to the cached SynapseCollection;
     non-excitatory entries retain their original values (no-op write).
     """
-    import nest
+    import simbackend as sim
 
     alpha = homeo.alpha
     t0 = time.perf_counter()
@@ -4229,7 +4229,7 @@ def run_homeostasis_hook(homeo):
         homeo.weights[homeo.exc_mask] * alpha, 0.01)
 
     # SetStatus on the full collection — non-excitatory rows write same value
-    nest.SetStatus(homeo.all_conns, "weight", homeo.weights.tolist())
+    sim.SetStatus(homeo.all_conns, "weight", homeo.weights.tolist())
     print(f"  [homeo] SetStatus complete in {time.perf_counter()-t0:.1f}s")
 
     stats = {
@@ -4286,7 +4286,7 @@ def replay_score(spk_times, spk_senders, seq_groups, window_start, window_stop):
 # ============================================================================
 
 def _get_spikes(spk_rec):
-    ev = nest.GetStatus(spk_rec, "events")[0]
+    ev = sim.GetStatus(spk_rec, "events")[0]
     return np.array(ev["times"], dtype=float), np.array(ev["senders"], dtype=int)
 
 
@@ -4417,7 +4417,7 @@ def print_report(net, sim_ms, scale_label, ec_module=None, dg_module=None,
         ("CA3 INT_SUP",  net["CA3_INT_SUP"],  net["spk_ca3_int_sup"]),
         ("CA3 INT_DEEP", net["CA3_INT_DEEP"], net["spk_ca3_int_deep"]),
     ]:
-        ev   = nest.GetStatus(spk, "events")[0]
+        ev   = sim.GetStatus(spk, "events")[0]
         rate = mean_rate(pop, spk, sim_ms)
         print(f"  {label:20s}: N={len(pop):8,} | {len(ev['times']):10,} spikes | {rate:6.2f} Hz")
 
@@ -4456,13 +4456,13 @@ def print_report(net, sim_ms, scale_label, ec_module=None, dg_module=None,
             ("DG MC_HIGH", dg_module.N_mc_high, dg_module.spk_mc_high),
             ("DG BASKET",  dg_module.N_basket,  dg_module.spk_basket),
         ]:
-            ev   = nest.GetStatus(spk, "events")[0]
+            ev   = sim.GetStatus(spk, "events")[0]
             rate = len(ev["senders"]) / (max(pop_n, 1) * sim_ms / 1000.0)
             print(f"  {label:20s}: N={pop_n:8,} | {len(ev['times']):10,} spikes | {rate:6.2f} Hz")
 
         # MC_HIGH should fire less than MC_LOW under equal drive (higher rheobase)
-        r_low  = len(nest.GetStatus(dg_module.spk_mc_low,  "events")[0]["senders"]) / max(dg_module.N_mc_low, 1)
-        r_high = len(nest.GetStatus(dg_module.spk_mc_high, "events")[0]["senders"]) / max(dg_module.N_mc_high, 1)
+        r_low  = len(sim.GetStatus(dg_module.spk_mc_low,  "events")[0]["senders"]) / max(dg_module.N_mc_low, 1)
+        r_high = len(sim.GetStatus(dg_module.spk_mc_high, "events")[0]["senders"]) / max(dg_module.N_mc_high, 1)
         if r_high > 0:
             print(f"  MC_LOW/MC_HIGH spikes-per-cell ratio = {r_low/r_high:.2f} "
                   f"(expect >1: MC_HIGH has the higher rheobase)")
@@ -4617,8 +4617,7 @@ def save_replay_hdf5(net, sim_ms, scale_label, outpath, bin_ms=10.0,
             h5.attrs["ec_lii_K_ca1"]   = ec_module.K_ca1_ec
             h5.attrs["ec_lii_w_init"]  = ec_module.w_init
         try:
-            import nest as _nest
-            h5.attrs["nest_version"] = _nest.__version__
+            h5.attrs["nest_version"] = sim.version()
         except Exception:
             pass
 
@@ -4974,6 +4973,9 @@ Dentate gyrus (Phase 6.2):
     parser.add_argument(
         "--threads", type=int, default=None,
         help="OpenMP threads per MPI rank (overrides auto-selected default)")
+    parser.add_argument(
+        "--backend", choices=sim.BACKENDS, default="nest",
+        help="Simulator backend (simbackend.py). 'nest' = CPU NEST, the reference.")
     parser.add_argument(
         "--no-figures", action="store_true",
         help="Skip figure generation — recommended for scale>=12 on HPC")
@@ -5405,6 +5407,7 @@ Dentate gyrus (Phase 6.2):
              "epoch -> record metrics). Saves ~10 hours of compute vs separate "
              "jobs. Overrides --homeo-alpha. Requires --homeostasis --stc.")
     args = parser.parse_args()
+    sim.use(args.backend)
 
     # Model-wide heterogeneity must be set BEFORE any Create/Connect call.
     _pick = lambda v: args.het if v is None else v
@@ -5715,7 +5718,7 @@ Dentate gyrus (Phase 6.2):
                     pre_group_of=ec_module.group_of,
                     post_group_of=np.minimum(np.arange(len(_tgt)) // _gs, G_ - 1))
             else:
-                nest.Connect(ec_module.population, _tgt,
+                sim.Connect(ec_module.population, _tgt,
                              conn_spec={"rule": "fixed_indegree", "indegree": _K},
                              syn_spec={"synapse_model": "static_synapse",
                                        "weight": float(args.ec_ca3_w),
@@ -5852,7 +5855,7 @@ Dentate gyrus (Phase 6.2):
         if neurogenesis_hook is not None and args.dg_neurogenesis:
             run_dg_neurogenesis_hook(neurogenesis_hook, dg_module, epoch,
                                      args.neurogenesis_rate)
-        nest.Simulate(SIM_MS)
+        sim.Simulate(SIM_MS)
 
         # Phase 10: DG perforant-path Hebbian learning, same two SWR windows
         # as every other plasticity hook. Runs whenever the hook exists (i.e.
@@ -5924,7 +5927,7 @@ Dentate gyrus (Phase 6.2):
         _t_all = total_sim_ms
 
         # 1. the cortical assembly = mPFC cells the consolidated pattern drives
-        _ev = nest.GetStatus(mpfc_module.spike_rec, "events")[0]
+        _ev = sim.GetStatus(mpfc_module.spike_rec, "events")[0]
         _t, _s = np.asarray(_ev["times"]), np.asarray(_ev["senders"])
         _m = np.zeros(len(_t), dtype=bool)
         for _e in range(n_epochs):
@@ -5949,9 +5952,9 @@ Dentate gyrus (Phase 6.2):
             # threshold, it does not fire them (verified by the pre-cue
             # baseline, which must stay ~0).
             if args.cr_prime_rate > 0:
-                _pg = nest.Create("poisson_generator", mpfc_module.N,
+                _pg = sim.Create("poisson_generator", mpfc_module.N,
                                   params={"rate": float(args.cr_prime_rate)})
-                nest.Connect(_pg, mpfc_module.population, conn_spec="one_to_one",
+                sim.Connect(_pg, mpfc_module.population, conn_spec="one_to_one",
                              syn_spec={"weight": float(args.cr_prime_weight),
                                        "delay": 1.0})
                 print(f"  [prime] mPFC tonic drive {args.cr_prime_rate:.0f} Hz "
@@ -5961,8 +5964,8 @@ Dentate gyrus (Phase 6.2):
             _cued, _un = cortical_recall_probe(
                 mpfc_module, _assembly, args.cr_cue_frac, _cue_t,
                 rng=np.random.default_rng(7))
-            nest.Simulate(500.0)
-            _ev2 = nest.GetStatus(mpfc_module.spike_rec, "events")[0]
+            sim.Simulate(500.0)
+            _ev2 = sim.GetStatus(mpfc_module.spike_rec, "events")[0]
             _t2, _s2 = np.asarray(_ev2["times"]), np.asarray(_ev2["senders"])
             _r = completion_index(_t2, _s2, _cued, _un, _cue_t, _cue_t + 80.0)
             # baseline: an equal window BEFORE the cue, post-lesion, no stimulus
@@ -5988,7 +5991,7 @@ Dentate gyrus (Phase 6.2):
                 _g2 = pattern_recall_specificity(
                     mpfc_module, net["epoch_pattern"], n_epochs, SIM_MS,
                     [swr_fwd, swr_rev],
-                    t_start=float(nest.GetKernelStatus("biological_time")) + 300.0,
+                    t_start=float(sim.GetKernelStatus("biological_time")) + 300.0,
                     n_patterns=net["n_patterns"], cue_frac=args.cr_cue_frac,
                     trials_per_pattern=args.g2_trials, iti_ms=args.g2_iti)
                 net["g2_recall"] = _g2
@@ -6055,7 +6058,7 @@ Dentate gyrus (Phase 6.2):
             # CA3 attractor dynamics under the downscaled weights.
             print(f"  [homeo] Running verification epoch ({SIM_MS:.0f} ms)...")
             t_verify = time.perf_counter()
-            nest.Simulate(SIM_MS)
+            sim.Simulate(SIM_MS)
 
             # Verification epoch global start time = consolidation total + prior verifications
             epoch_t0_verify = (n_epochs + sweep_idx) * SIM_MS
@@ -6078,7 +6081,7 @@ Dentate gyrus (Phase 6.2):
             print(f"    Verification epoch done in {time.perf_counter()-t_verify:.1f}s")
 
             # Measure replay quality on this verification epoch's SWR windows
-            from nest import GetStatus as _gs
+            from simbackend import GetStatus as _gs
             _ev3 = _gs(net["spk_ca3_sup"], "events")[0]
             _t3  = np.array(_ev3["times"],   dtype=float)
             _s3  = np.array(_ev3["senders"], dtype=int)

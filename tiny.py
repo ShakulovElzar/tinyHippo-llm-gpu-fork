@@ -16,7 +16,7 @@ Inputs (generators only):
   ECIII-like independent Poisson -> PYR
 """
 
-import nest
+import simbackend as sim
 import numpy as np
 
 
@@ -25,9 +25,9 @@ import numpy as np
 # -------------------------
 
 def safe_set_seeds(master_seed: int = 20260111):
-    n_threads = nest.GetKernelStatus().get("local_num_threads", 1)
+    n_threads = sim.GetKernelStatus().get("local_num_threads", 1)
     try:
-        nest.SetKernelStatus(
+        sim.SetKernelStatus(
             {
                 "grng_seed": master_seed,
                 "rng_seeds": list(range(master_seed + 1, master_seed + 1 + n_threads)),
@@ -36,7 +36,7 @@ def safe_set_seeds(master_seed: int = 20260111):
     except Exception:
         # older fallback
         try:
-            nest.SetKernelStatus({"rng_seed": master_seed})
+            sim.SetKernelStatus({"rng_seed": master_seed})
         except Exception:
             pass
 
@@ -49,11 +49,11 @@ def bernoulli_connect(pre, post, p, weight, delay, rng):
         mask = rng.random(post_ids.size) < p
         targets = post_ids[mask].tolist()
         if targets:
-            nest.Connect([int(src)], targets, syn_spec={"weight": float(weight), "delay": float(delay)})
+            sim.Connect([int(src)], targets, syn_spec={"weight": float(weight), "delay": float(delay)})
 
 
 def conn_stats(label: str, pre, post):
-    conns = nest.GetConnections(pre, post)
+    conns = sim.GetConnections(pre, post)
     n_pre, n_post = len(pre), len(post)
     try:
         n_conn = conns.get("source").size
@@ -67,7 +67,7 @@ def conn_stats(label: str, pre, post):
 
 
 def mean_rate(pop, spk, sim_ms: float) -> float:
-    ev = nest.GetStatus(spk, "events")[0]
+    ev = sim.GetStatus(spk, "events")[0]
     return len(ev["senders"]) / (len(pop) * (sim_ms / 1000.0))
 
 
@@ -83,7 +83,7 @@ def maybe_make_theta_generators(n: int, rate_mean: float, rate_amp: float, freq_
         NodeCollection of generators, or None if the model is unavailable.
     """
     try:
-        gens = nest.Create(
+        gens = sim.Create(
             "sinusoidal_poisson_generator",
             int(n),
             params={
@@ -118,7 +118,7 @@ def make_swr_event_generators(
     Returns:
         (sharp_gen, ripple_gen) NodeCollections, each of size n (or ripple_gen may be None).
     """
-    sharp = nest.Create(
+    sharp = sim.Create(
         "poisson_generator",
         int(n),
         params={"rate": float(sharpwave_rate), "start": float(start_ms), "stop": float(stop_ms)},
@@ -126,7 +126,7 @@ def make_swr_event_generators(
 
     ripple = None
     try:
-        ripple = nest.Create(
+        ripple = sim.Create(
             "sinusoidal_poisson_generator",
             int(n),
             params={
@@ -141,7 +141,7 @@ def make_swr_event_generators(
     except Exception as e:
         # Fallback: constant high-rate Poisson during the ripple window
         print(f"[swr] sinusoidal_poisson_generator not available ({e}); using poisson_generator for ripple.")
-        ripple = nest.Create(
+        ripple = sim.Create(
             "poisson_generator",
             int(n),
             params={"rate": float(ripple_rate_mean), "start": float(start_ms), "stop": float(stop_ms)},
@@ -163,8 +163,8 @@ def build_ca1_izh(
     rate_ec_pyr=900.0,
     rate_ca3_ba=1200.0,
 ):
-    nest.ResetKernel()
-    nest.SetKernelStatus(
+    sim.ResetKernel()
+    sim.SetKernelStatus(
         {
             "resolution": 0.1,        # ms
             "local_num_threads": 4,   # tune for your CPU
@@ -174,7 +174,7 @@ def build_ca1_izh(
     )
     safe_set_seeds()
 
-    if "izhikevich" not in nest.Models("nodes"):
+    if "izhikevich" not in sim.Models("nodes"):
         raise RuntimeError("NEST model 'izhikevich' not found in this installation.")
 
     ''' --- Izhikevich parameter sets (canonical-ish)'''
@@ -185,14 +185,14 @@ def build_ca1_izh(
     # LTS-ish (slow / adapting interneuron proxy; used here as OLM-like)
     olm_params = dict(a=0.02, b=0.25, c=-65.0, d=2.0, V_m=-65.0, U_m=-16.25, I_e=0.0)
 
-    PYR = nest.Create("izhikevich", N_pyr, params=pyr_params)
-    BASKET = nest.Create("izhikevich", N_basket, params=basket_params)
-    OLM = nest.Create("izhikevich", N_olm, params=olm_params)
+    PYR = sim.Create("izhikevich", N_pyr, params=pyr_params)
+    BASKET = sim.Create("izhikevich", N_basket, params=basket_params)
+    OLM = sim.Create("izhikevich", N_olm, params=olm_params)
 
     ''' --- Independent external inputs (generators only) '''
-    CA3_to_PYR = nest.Create("poisson_generator", N_pyr, params={"rate": float(rate_ca3_pyr)})
-    ECIII_to_PYR = nest.Create("poisson_generator", N_pyr, params={"rate": float(rate_ec_pyr)})
-    CA3_to_BA = nest.Create("poisson_generator", N_basket, params={"rate": float(rate_ca3_ba)})
+    CA3_to_PYR = sim.Create("poisson_generator", N_pyr, params={"rate": float(rate_ca3_pyr)})
+    ECIII_to_PYR = sim.Create("poisson_generator", N_pyr, params={"rate": float(rate_ec_pyr)})
+    CA3_to_BA = sim.Create("poisson_generator", N_basket, params={"rate": float(rate_ca3_ba)})
 
     # --- Synapse weights (IMPORTANT: for izhikevich, weight directly jumps V_m in mV)
     w_ca3_pyr = 3.0
@@ -211,9 +211,9 @@ def build_ca1_izh(
     d_slow = 3.0
 
     # --- Connect inputs one-to-one
-    nest.Connect(CA3_to_PYR, PYR, conn_spec="one_to_one", syn_spec={"weight": w_ca3_pyr, "delay": d_fast})
-    nest.Connect(ECIII_to_PYR, PYR, conn_spec="one_to_one", syn_spec={"weight": w_ec_pyr, "delay": d_slow})
-    nest.Connect(CA3_to_BA, BASKET, conn_spec="one_to_one", syn_spec={"weight": w_ca3_basket, "delay": d_fast})
+    sim.Connect(CA3_to_PYR, PYR, conn_spec="one_to_one", syn_spec={"weight": w_ca3_pyr, "delay": d_fast})
+    sim.Connect(ECIII_to_PYR, PYR, conn_spec="one_to_one", syn_spec={"weight": w_ec_pyr, "delay": d_slow})
+    sim.Connect(CA3_to_BA, BASKET, conn_spec="one_to_one", syn_spec={"weight": w_ca3_basket, "delay": d_fast})
 
     # --- Recurrent connectivity
     rng = np.random.default_rng(42)
@@ -228,20 +228,20 @@ def build_ca1_izh(
     bernoulli_connect(OLM, PYR, p_OE, w_olm_pyr, d_slow, rng)           # OLM->PYR
 
     # --- Recorders
-    spk_pyr = nest.Create("spike_recorder")
-    spk_ba = nest.Create("spike_recorder")
-    spk_olm = nest.Create("spike_recorder")
-    nest.Connect(PYR, spk_pyr)
-    nest.Connect(BASKET, spk_ba)
-    nest.Connect(OLM, spk_olm)
+    spk_pyr = sim.Create("spike_recorder")
+    spk_ba = sim.Create("spike_recorder")
+    spk_olm = sim.Create("spike_recorder")
+    sim.Connect(PYR, spk_pyr)
+    sim.Connect(BASKET, spk_ba)
+    sim.Connect(OLM, spk_olm)
 
     # Vm traces (plot per neuron to avoid “diagonal ramps” artifact)
     try:
-        vm = nest.Create("multimeter", params={"record_from": ["V_m", "U_m"], "interval": 0.2})
+        vm = sim.Create("multimeter", params={"record_from": ["V_m", "U_m"], "interval": 0.2})
     except Exception:
-        vm = nest.Create("multimeter", params={"record_from": ["V_m"], "interval": 0.2})
+        vm = sim.Create("multimeter", params={"record_from": ["V_m"], "interval": 0.2})
     pyr_probe = PYR[:5]
-    nest.Connect(vm, pyr_probe)
+    sim.Connect(vm, pyr_probe)
 
     # Connectivity stats
     print("\nConnectivity stats:")
@@ -339,8 +339,8 @@ def build_ca1_ca3_izh(
         It's the minimal recurrent E/I core you can later refine.
     """
 
-    nest.ResetKernel()
-    nest.SetKernelStatus(
+    sim.ResetKernel()
+    sim.SetKernelStatus(
         {
             "resolution": 0.1,
             "local_num_threads": 4,
@@ -350,7 +350,7 @@ def build_ca1_ca3_izh(
     )
     safe_set_seeds()
 
-    if "izhikevich" not in nest.Models("nodes"):
+    if "izhikevich" not in sim.Models("nodes"):
         raise RuntimeError("NEST model 'izhikevich' not found in this installation.")
 
     # --- Izhikevich parameter sets
@@ -359,25 +359,25 @@ def build_ca1_ca3_izh(
     olm_params = dict(a=0.02, b=0.25, c=-65.0, d=2.0, V_m=-65.0, U_m=-16.25, I_e=0.0)
 
     # --- Populations
-    CA1_PYR = nest.Create("izhikevich", int(N_ca1_pyr), params=pyr_params)
-    CA1_BASKET = nest.Create("izhikevich", int(N_ca1_basket), params=basket_params)
-    CA1_OLM = nest.Create("izhikevich", int(N_ca1_olm), params=olm_params)
+    CA1_PYR = sim.Create("izhikevich", int(N_ca1_pyr), params=pyr_params)
+    CA1_BASKET = sim.Create("izhikevich", int(N_ca1_basket), params=basket_params)
+    CA1_OLM = sim.Create("izhikevich", int(N_ca1_olm), params=olm_params)
 
-    CA3_PYR = nest.Create("izhikevich", int(N_ca3_pyr), params=pyr_params)
-    CA3_INT = nest.Create("izhikevich", int(N_ca3_int), params=basket_params)
+    CA3_PYR = sim.Create("izhikevich", int(N_ca3_pyr), params=pyr_params)
+    CA3_INT = sim.Create("izhikevich", int(N_ca3_int), params=basket_params)
 
     # --- External inputs (independent poisson per neuron)
     # CA1 receives ECIII-like context drive + some unspecific drive to basket cells
-    ECIII_to_CA1 = nest.Create("poisson_generator", len(CA1_PYR), params={"rate": float(rate_ec_ca1_pyr)})
-    DRIVE_to_CA1_BA = nest.Create(
+    ECIII_to_CA1 = sim.Create("poisson_generator", len(CA1_PYR), params={"rate": float(rate_ec_ca1_pyr)})
+    DRIVE_to_CA1_BA = sim.Create(
         "poisson_generator", len(CA1_BASKET), params={"rate": float(rate_drive_ca1_basket)}
     )
 
     # CA3 receives ECII/EC input + DG-like drive + a moderate background drive
-    EC_to_CA3 = nest.Create("poisson_generator", len(CA3_PYR), params={"rate": float(rate_ec_ca3_pyr)})
-    DG_to_CA3 = nest.Create("poisson_generator", len(CA3_PYR), params={"rate": float(rate_dg_ca3_pyr)})
-    DRIVE_to_CA3 = nest.Create("poisson_generator", len(CA3_PYR), params={"rate": float(rate_ca3_drive_pyr)})
-    DRIVE_to_CA3_INT = nest.Create(
+    EC_to_CA3 = sim.Create("poisson_generator", len(CA3_PYR), params={"rate": float(rate_ec_ca3_pyr)})
+    DG_to_CA3 = sim.Create("poisson_generator", len(CA3_PYR), params={"rate": float(rate_dg_ca3_pyr)})
+    DRIVE_to_CA3 = sim.Create("poisson_generator", len(CA3_PYR), params={"rate": float(rate_ca3_drive_pyr)})
+    DRIVE_to_CA3_INT = sim.Create(
         "poisson_generator", len(CA3_INT), params={"rate": float(rate_drive_ca3_int)}
     )
 
@@ -409,15 +409,15 @@ def build_ca1_ca3_izh(
     d_slow = 3.0
 
     # --- Wire inputs one-to-one
-    nest.Connect(ECIII_to_CA1, CA1_PYR, conn_spec="one_to_one", syn_spec={"weight": w_ec, "delay": d_slow})
-    nest.Connect(
+    sim.Connect(ECIII_to_CA1, CA1_PYR, conn_spec="one_to_one", syn_spec={"weight": w_ec, "delay": d_slow})
+    sim.Connect(
         DRIVE_to_CA1_BA, CA1_BASKET, conn_spec="one_to_one", syn_spec={"weight": w_drive, "delay": d_fast}
     )
 
-    nest.Connect(EC_to_CA3, CA3_PYR, conn_spec="one_to_one", syn_spec={"weight": w_ec, "delay": d_slow})
-    nest.Connect(DG_to_CA3, CA3_PYR, conn_spec="one_to_one", syn_spec={"weight": w_dg, "delay": d_fast})
-    nest.Connect(DRIVE_to_CA3, CA3_PYR, conn_spec="one_to_one", syn_spec={"weight": w_drive, "delay": d_fast})
-    nest.Connect(
+    sim.Connect(EC_to_CA3, CA3_PYR, conn_spec="one_to_one", syn_spec={"weight": w_ec, "delay": d_slow})
+    sim.Connect(DG_to_CA3, CA3_PYR, conn_spec="one_to_one", syn_spec={"weight": w_dg, "delay": d_fast})
+    sim.Connect(DRIVE_to_CA3, CA3_PYR, conn_spec="one_to_one", syn_spec={"weight": w_drive, "delay": d_fast})
+    sim.Connect(
         DRIVE_to_CA3_INT, CA3_INT, conn_spec="one_to_one", syn_spec={"weight": w_drive, "delay": d_fast}
     )
 
@@ -427,13 +427,13 @@ def build_ca1_ca3_izh(
         # CA3 theta drive
         th_ca3_pyr = maybe_make_theta_generators(len(CA3_PYR), theta_rate_mean_ca3, theta_rate_amp_ca3, theta_hz)
         if th_ca3_pyr is not None:
-            nest.Connect(
+            sim.Connect(
                 th_ca3_pyr, CA3_PYR, conn_spec="one_to_one",
                 syn_spec={"weight": float(theta_w_ca3_pyr), "delay": float(theta_delay)},
             )
         th_ca3_int = maybe_make_theta_generators(len(CA3_INT), theta_rate_mean_ca3, theta_rate_amp_ca3, theta_hz)
         if th_ca3_int is not None:
-            nest.Connect(
+            sim.Connect(
                 th_ca3_int, CA3_INT, conn_spec="one_to_one",
                 syn_spec={"weight": float(theta_w_ca3_int), "delay": float(theta_delay)},
             )
@@ -441,19 +441,19 @@ def build_ca1_ca3_izh(
         # CA1 theta drive
         th_ca1_pyr = maybe_make_theta_generators(len(CA1_PYR), theta_rate_mean_ca1, theta_rate_amp_ca1, theta_hz)
         if th_ca1_pyr is not None:
-            nest.Connect(
+            sim.Connect(
                 th_ca1_pyr, CA1_PYR, conn_spec="one_to_one",
                 syn_spec={"weight": float(theta_w_ca1_pyr), "delay": float(theta_delay)},
             )
         th_ca1_ba = maybe_make_theta_generators(len(CA1_BASKET), theta_rate_mean_ca1, theta_rate_amp_ca1, theta_hz)
         if th_ca1_ba is not None:
-            nest.Connect(
+            sim.Connect(
                 th_ca1_ba, CA1_BASKET, conn_spec="one_to_one",
                 syn_spec={"weight": float(theta_w_ca1_int), "delay": float(theta_delay)},
             )
         th_ca1_olm = maybe_make_theta_generators(len(CA1_OLM), theta_rate_mean_ca1, theta_rate_amp_ca1, theta_hz)
         if th_ca1_olm is not None:
-            nest.Connect(
+            sim.Connect(
                 th_ca1_olm, CA1_OLM, conn_spec="one_to_one",
                 syn_spec={"weight": float(theta_w_ca1_int), "delay": float(theta_delay)},
             )
@@ -475,12 +475,12 @@ def build_ca1_ca3_izh(
                 ripple_rate_amp=swr_ripple_rate_amp,
                 ripple_hz=swr_ripple_hz,
             )
-            nest.Connect(
+            sim.Connect(
                 sw_sharp_ca3, CA3_PYR, conn_spec="one_to_one",
                 syn_spec={"weight": float(swr_w_sharp_ca3_pyr), "delay": 1.0},
             )
             # Ripple to CA3 PYR (weak)
-            nest.Connect(
+            sim.Connect(
                 sw_ripple_ca3, CA3_PYR, conn_spec="one_to_one",
                 syn_spec={"weight": float(swr_w_ripple_ca3_pyr), "delay": 1.0},
             )
@@ -495,7 +495,7 @@ def build_ca1_ca3_izh(
                 ripple_rate_amp=swr_ripple_rate_amp,
                 ripple_hz=swr_ripple_hz,
             )
-            nest.Connect(
+            sim.Connect(
                 sw_ripple_ca3_int, CA3_INT, conn_spec="one_to_one",
                 syn_spec={"weight": float(swr_w_ripple_ca3_int), "delay": 1.0},
             )
@@ -510,11 +510,11 @@ def build_ca1_ca3_izh(
                 ripple_rate_amp=swr_ripple_rate_amp * 0.6,
                 ripple_hz=swr_ripple_hz,
             )
-            nest.Connect(
+            sim.Connect(
                 sw_sharp_ca1, CA1_PYR, conn_spec="one_to_one",
                 syn_spec={"weight": float(swr_w_sharp_ca1_pyr), "delay": 1.0},
             )
-            nest.Connect(
+            sim.Connect(
                 sw_ripple_ca1_pyr, CA1_PYR, conn_spec="one_to_one",
                 syn_spec={"weight": float(swr_w_ripple_ca1_pyr), "delay": 1.0},
             )
@@ -529,7 +529,7 @@ def build_ca1_ca3_izh(
                 ripple_rate_amp=swr_ripple_rate_amp * 0.8,
                 ripple_hz=swr_ripple_hz,
             )
-            nest.Connect(
+            sim.Connect(
                 sw_ripple_ca1_ba, CA1_BASKET, conn_spec="one_to_one",
                 syn_spec={"weight": float(swr_w_ripple_ca1_basket), "delay": 1.0},
             )
@@ -556,28 +556,28 @@ def build_ca1_ca3_izh(
     bernoulli_connect(CA3_PYR, CA1_BASKET, p_schaffer_basket, w_schaffer_ba, d_fast, rng)
 
     # --- Recorders
-    spk_ca1_pyr = nest.Create("spike_recorder")
-    spk_ca1_ba = nest.Create("spike_recorder")
-    spk_ca1_olm = nest.Create("spike_recorder")
-    nest.Connect(CA1_PYR, spk_ca1_pyr)
-    nest.Connect(CA1_BASKET, spk_ca1_ba)
-    nest.Connect(CA1_OLM, spk_ca1_olm)
+    spk_ca1_pyr = sim.Create("spike_recorder")
+    spk_ca1_ba = sim.Create("spike_recorder")
+    spk_ca1_olm = sim.Create("spike_recorder")
+    sim.Connect(CA1_PYR, spk_ca1_pyr)
+    sim.Connect(CA1_BASKET, spk_ca1_ba)
+    sim.Connect(CA1_OLM, spk_ca1_olm)
 
-    spk_ca3_pyr = nest.Create("spike_recorder")
-    spk_ca3_int = nest.Create("spike_recorder")
-    nest.Connect(CA3_PYR, spk_ca3_pyr)
-    nest.Connect(CA3_INT, spk_ca3_int)
+    spk_ca3_pyr = sim.Create("spike_recorder")
+    spk_ca3_int = sim.Create("spike_recorder")
+    sim.Connect(CA3_PYR, spk_ca3_pyr)
+    sim.Connect(CA3_INT, spk_ca3_int)
 
     # Vm probes (few neurons in CA1 + CA3)
     try:
-        vm = nest.Create("multimeter", params={"record_from": ["V_m", "U_m"], "interval": 0.2})
+        vm = sim.Create("multimeter", params={"record_from": ["V_m", "U_m"], "interval": 0.2})
     except Exception:
-        vm = nest.Create("multimeter", params={"record_from": ["V_m"], "interval": 0.2})
+        vm = sim.Create("multimeter", params={"record_from": ["V_m"], "interval": 0.2})
 
     ca1_probe = CA1_PYR[:5]
     ca3_probe = CA3_PYR[:5]
-    nest.Connect(vm, ca1_probe)
-    nest.Connect(vm, ca3_probe)
+    sim.Connect(vm, ca1_probe)
+    sim.Connect(vm, ca3_probe)
 
     # Connectivity stats
     print("\nConnectivity stats:")
@@ -616,12 +616,12 @@ def build_ca1_ca3_izh(
 
 
 def run_report_plot(net, sim_ms=1000.0):
-    nest.Simulate(float(sim_ms))
+    sim.Simulate(float(sim_ms))
 
     # Spike counts + mean rates
-    ev_p = nest.GetStatus(net["spk_pyr"], "events")[0]
-    ev_b = nest.GetStatus(net["spk_ba"], "events")[0]
-    ev_o = nest.GetStatus(net["spk_olm"], "events")[0]
+    ev_p = sim.GetStatus(net["spk_pyr"], "events")[0]
+    ev_b = sim.GetStatus(net["spk_ba"], "events")[0]
+    ev_o = sim.GetStatus(net["spk_olm"], "events")[0]
 
     print("\nSpike counts:")
     print("  PYR   :", len(ev_p["times"]))
@@ -635,8 +635,8 @@ def run_report_plot(net, sim_ms=1000.0):
 
     # Optional CA3 report (present when using build_ca1_ca3_izh)
     if "CA3_PYR" in net:
-        ev_c3e = nest.GetStatus(net["spk_ca3_pyr"], "events")[0]
-        ev_c3i = nest.GetStatus(net["spk_ca3_int"], "events")[0]
+        ev_c3e = sim.GetStatus(net["spk_ca3_pyr"], "events")[0]
+        ev_c3i = sim.GetStatus(net["spk_ca3_int"], "events")[0]
         print("\nCA3 Spike counts:")
         print("  CA3_PYR:", len(ev_c3e["times"]))
         print("  CA3_INT:", len(ev_c3i["times"]))
@@ -648,7 +648,7 @@ def run_report_plot(net, sim_ms=1000.0):
     import matplotlib.pyplot as plt
 
     def raster(spk, title):
-        ev = nest.GetStatus(spk, "events")[0]
+        ev = sim.GetStatus(spk, "events")[0]
         plt.figure()
         plt.plot(ev["times"], ev["senders"], ".")
         plt.xlabel("Time (ms)")
@@ -665,7 +665,7 @@ def run_report_plot(net, sim_ms=1000.0):
 
     # --- Population rate traces (this is where theta/SWR become obvious)
     def get_times(spk):
-        ev = nest.GetStatus(spk, "events")[0]
+        ev = sim.GetStatus(spk, "events")[0]
         return np.asarray(ev["times"], dtype=float)
 
     def binned_rate(times_ms, t_stop_ms, n_cells, bin_ms):
@@ -711,7 +711,7 @@ def run_report_plot(net, sim_ms=1000.0):
     plt.legend()
 
     # Vm trace per neuron (critical to avoid fake diagonals)
-    ev = nest.GetStatus(net["vm"], "events")[0]
+    ev = sim.GetStatus(net["vm"], "events")[0]
     times = np.array(ev["times"])
     senders = np.array(ev["senders"])
     V = np.array(ev["V_m"])
