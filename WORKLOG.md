@@ -493,3 +493,68 @@ pattern difference on a large constant input (sections 8–10).
 Not tested: lowering the constant CA3/CA1 drive. That changes the whole hippocampal operating
 point (DG, replay and STC were all calibrated at this point), so it is a science change for
 `tinyHippo`, not a quick flag.
+
+### 13. Reverse replay with EC LII inhibition: 7 seeds; inhibition sweep on the slice
+
+Runs: section 7 config, seeds 505/606/707/808 (control `out/id14_s*.h5`, `--ec-lii-ff-inhib -0.25`
+`out/ff_s*.h5`), plus seeds 202/303/404 from section 9. `id14_s909` done; `ff_s909` stopped, deleted.
+
+| 7 seeds × 14 blocks (n = 98) | control | inhibition | paired Wilcoxon p |
+|---|---|---|---|
+| forward ρ | +0.330 | +0.320 | 0.88 |
+| reverse ρ | −0.306 | −0.248 | **0.011** |
+
+Reverse is weaker on 6 of 7 seeds (s707 −0.31 → −0.33). Result: **EC LII inhibition weakens
+reverse replay a little (about −0.06 ρ); forward is unchanged.** Cause not checked.
+
+Slice sweep (seeds 202/303/404, `ec_slice.py` with `win:`/`kout:` options): the result depends on
+total inhibition (weight × PV inputs per cell). Weaker than −0.15 (×40): ≥ 3% active, pattern
+weak or lost. −0.25: 1.6–1.8% active, z +0.48–0.51, decode 0.64–0.71 (p ≤ 0.018) on all 3.
+−0.35: no better. Weak CA1→PV drive (w 0.15): worse. So −0.25 stays. Sparse code is not the
+cause of the weak full-model decoder (0.43–0.64); difference to the slice not checked (STC?).
+
+CA3 tonic drive: added by Max in 18cfbe6 (2026-08-04) on purpose (without it consolidation
+failed at 12%). His comment expects CA3 ~7.5 Hz; full-loop runs show ~20 Hz. Asked him; not changed.
+
+### 14. Lower CA3 drive + stronger EC LV → mPFC: the pattern reaches mPFC on 3 seeds
+
+Max (2026-11-12): bio plausibility is not critical, change the drive if needed. Branch `ca3-drive`.
+
+New opt-in flags (defaults keep old behaviour):
+- `--ca3-drive-scale S`: multiplies the constant Poisson inputs to CA3 (tonic, EC, drive). Default 1.
+- `--swr-bg-gain G`: sharp-wave/ripple background in every epoch (default: epoch 0 only), rates × G,
+  via numpy-drawn spike_generator trains. Off by default.
+- `--w-eclv-mpfc W`: EC LV → mPFC weight (default 1.8 mV).
+
+Pilot, seed 202, 6 blocks, section 11 config (`lv_s202` flags):
+- Drive 1.0 / 0.7 / 0.5 / 0.35: CA3 20.6 / 14.0 / 10.1 / 7.2 Hz, but in-SWR = outside at every
+  value (no burst). Pattern z downstream improves at 0.7 and 0.35 (CA1 +0.26 → +0.78 / +0.58,
+  EC LV +0.04 → +0.36 / +0.24, mPFC +0.02 → +0.36 / +0.25). Replay at 0.35: +0.40 / −0.45.
+- `--swr-bg-gain` 1–3: no burst. Rates in the window go DOWN (ratio 0.4–0.9): the background
+  also drives CA3 and CA1 interneurons, and inhibition wins. Not used further.
+- Note: 4 full runs at once filled 16 GB RAM (swap 8.3/9.2 GB) and ran ~10× slower. Use 2.
+- mPFC weight at drive 0.35: w 3 / 4.5 / 6 / 9 → mPFC active in SWR 16 / 54 / 88 / 100%;
+  G2 skipped / +0.024 (p 0.32) / **+0.060 (p 0.020)** / 0.000. w 9 saturates mPFC.
+
+Confirmation, seeds 202/303/404, 14 blocks, `--ca3-drive-scale 0.35 --w-eclv-mpfc 6`
+(`out/cx_s*.h5`), against section 11 (`out/lv_s*.h5`, drive 1.0, w 1.8):
+
+| | section 11 | drive 0.35 + w 6 |
+|---|---|---|
+| CA1 z | +0.48 / +0.62 / +0.67 | +0.60 / +0.75 / +0.58 |
+| EC LII z | +0.48 / +0.58 / +0.47 | +0.60 / +0.77 / +0.68 |
+| EC LV z | +0.15 / +0.21 / +0.23 | +0.19 / +0.40 / +0.29 (all p ≤ 0.002) |
+| EC LV decoder (counts) | 0.43 / 0.36 / 0.57 | **0.86 / 0.93 / 0.71** (p ≤ 0.007) |
+| mPFC z | +0.05 / +0.06 / +0.05 (n.s.) | **+0.44 / +0.52 / +0.45** (p ≤ 0.002) |
+| mPFC decoder (rate+timing) | 0.21 / 0.43 / 0.43 | 0.86 (p 0.001) / 0.36 / 0.71 (p 0.017) |
+| G2 specificity | skipped | −0.002 (p 0.54) / +0.064 (p 0.018) / +0.011 (p 0.29) |
+| replay fwd / rev | — | +0.38/−0.39, +0.31/−0.32, +0.48/−0.44 |
+
+CA3 ~9 Hz, CA1 ~6 Hz; still no in-SWR burst (ratio 0.96–1.08).
+
+Result: **pattern identity now reaches mPFC on all 3 seeds** (z and, on 2/3, the decoder).
+**G2 is still not met** (needs p < 0.01; best +0.064, p 0.018 on s303). Two changes at once
+(drive and mPFC weight), 1% only. w was picked by mPFC activity and G2 on one pilot seed.
+Next: what limits G2 (mPFC recurrent learning, cue size), and a 12% check.
+
+S0 check with all new flags off: digest 8631eb29…, same as sections 6–13. Default runs unchanged.

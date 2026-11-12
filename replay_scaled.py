@@ -1030,6 +1030,8 @@ def build_replay_network(
     rate_drive_ca3_int_sup=820.0, rate_drive_ca3_int_deep=820.0,
     # Theta
     theta_on=True, theta_hz=8.0, theta_mean=1100.0, theta_amp=1000.0,
+    ca3_drive_scale=1.0,   # experiment: multiplies the constant Poisson inputs to CA3
+    swr_bg_gain=None,      # experiment: SWR background in every epoch, rates x gain
     # Synaptic weights (mV; fixed across scales — synapse count scales instead)
     # w_seq_bwd raised 0.30→0.70: the backward chain must self-sustain reverse
     # replay until STDP asymmetry takes over.  w_fwd/w_bwd ≈ 2.1 still gives
@@ -1247,13 +1249,13 @@ def build_replay_network(
         # sparse detonator on top.
         if ca3_tonic_rate_sup > 0:
             _tr = _rng_vm.normal(ca3_tonic_rate_sup, 100.0,
-                                 N_ca3_sup).clip(400.0, 1400.0)
+                                 N_ca3_sup).clip(400.0, 1400.0) * ca3_drive_scale
             _tg = sim.Create("poisson_generator", N_ca3_sup)
             sim.SetStatus(_tg, "rate", _tr.tolist())
             sim.Connect(_tg, CA3_SUP, conn_spec="one_to_one",
                          syn_spec={"weight": wcomp_w(ca3_tonic_weight), "delay": d_fast})
         if ca3_tonic_rate_deep > 0:
-            _drive(N_ca3_deep, ca3_tonic_rate_deep, CA3_DEEP, ca3_tonic_weight, d_fast)
+            _drive(N_ca3_deep, ca3_tonic_rate_deep * ca3_drive_scale, CA3_DEEP, ca3_tonic_weight, d_fast)
     else:
         # DG→CA3 SUP: heterogeneous rates (σ=100 Hz) to spread membrane potentials
         _dg_rates_sup = _rng_vm.normal(rate_dg_ca3_sup, 100.0,
@@ -1264,10 +1266,10 @@ def build_replay_network(
                      syn_spec={"weight": 3.0, "delay": d_fast})
         # DG→CA3 DEEP: uniform (smaller pop, less impact on replay clarity)
         _drive(N_ca3_deep,     rate_dg_ca3_deep,        CA3_DEEP,     1.0, d_fast)
-    _drive(N_ca3_sup,      rate_ec_ca3_sup,         CA3_SUP,      2.0, d_slow)
-    _drive(N_ca3_deep,     rate_ec_ca3_deep,        CA3_DEEP,     1.2, d_slow)
-    _drive(N_ca3_sup,      rate_ca3_drive_sup,      CA3_SUP,      2.0, d_fast)
-    _drive(N_ca3_deep,     rate_ca3_drive_deep,     CA3_DEEP,     1.5, d_fast)
+    _drive(N_ca3_sup,      rate_ec_ca3_sup * ca3_drive_scale,     CA3_SUP,  2.0, d_slow)
+    _drive(N_ca3_deep,     rate_ec_ca3_deep * ca3_drive_scale,    CA3_DEEP, 1.2, d_slow)
+    _drive(N_ca3_sup,      rate_ca3_drive_sup * ca3_drive_scale,  CA3_SUP,  2.0, d_fast)
+    _drive(N_ca3_deep,     rate_ca3_drive_deep * ca3_drive_scale, CA3_DEEP, 1.5, d_fast)
     _drive(N_ca3_int_sup,  rate_drive_ca3_int_sup,  CA3_INT_SUP,  2.0, d_fast, compensate=False)
     _drive(N_ca3_int_deep, rate_drive_ca3_int_deep, CA3_INT_DEEP, 2.0, d_fast, compensate=False)
 
@@ -1301,9 +1303,44 @@ def build_replay_network(
     # cheaper and is what carries pattern identity, so that is repeated per
     # epoch instead. Making the ripple background per-epoch cheaply would need
     # inhomogeneous_poisson_generator (one node, scheduled rate profile).
+    # --swr-bg-gain: the same background in EVERY epoch, rates x gain. The trains are
+    # drawn in numpy and fed through spike_generators (one node per cell, spikes only
+    # inside the windows), which is cheap, unlike one sinusoidal generator per window.
+    _swr_rng = np.random.default_rng(seed_connect + 77)
+
+    def _swr_trains(n, wins, rate, amp, hz):
+        gens = sim.Create("spike_generator", int(n))
+        peak = rate + amp
+        if peak <= 0:
+            return gens
+        trains = [[] for _ in range(int(n))]
+        for a, b in wins:
+            k = _swr_rng.poisson(peak * (b - a) / 1000.0, int(n))
+            for i in range(int(n)):
+                t = np.sort(_swr_rng.uniform(a, b, k[i]))
+                if amp > 0:   # thinning to rate + amp*sin(2 pi hz t)
+                    lam = rate + amp * np.sin(2 * np.pi * hz * (t - a) / 1000.0)
+                    t = t[_swr_rng.uniform(0, peak, t.size) < lam]
+                trains[i].append(t)
+        sim.SetStatus(gens, [{"spike_times": np.round(np.concatenate(tr), 1).clip(0.1).tolist()}
+                             for tr in trains])
+        return gens
+
+    def _swr(n, start_ms, stop_ms, sharpwave_rate, ripple_rate_mean, ripple_rate_amp, ripple_hz):
+        if swr_bg_gain is None:
+            return make_swr_event_generators(
+                n=n, start_ms=start_ms, stop_ms=stop_ms, sharpwave_rate=sharpwave_rate,
+                ripple_rate_mean=ripple_rate_mean, ripple_rate_amp=ripple_rate_amp,
+                ripple_hz=ripple_hz)
+        wins = [(ep * epoch_ms + start_ms, ep * epoch_ms + stop_ms)
+                for ep in range(max(1, n_epochs))]
+        g = float(swr_bg_gain)
+        return (_swr_trains(n, wins, sharpwave_rate * g, 0.0, 0.0),
+                _swr_trains(n, wins, ripple_rate_mean * g, ripple_rate_amp * g, ripple_hz))
+
     for swr_s, swr_e in [(swr_fwd_start, swr_fwd_stop),
                          (swr_rev_start, swr_rev_stop)]:
-        sw_sh_sup, sw_rip_sup = make_swr_event_generators(
+        sw_sh_sup, sw_rip_sup = _swr(
             n=N_ca3_sup, start_ms=swr_s, stop_ms=swr_e,
             sharpwave_rate=swr_sharpwave_rate,
             ripple_rate_mean=swr_ripple_mean, ripple_rate_amp=swr_ripple_amp,
@@ -1311,7 +1348,7 @@ def build_replay_network(
         sim.Connect(sw_sh_sup,  CA3_SUP, conn_spec="one_to_one", syn_spec={"weight": wcomp_w(0.35), "delay": 1.0})
         sim.Connect(sw_rip_sup, CA3_SUP, conn_spec="one_to_one", syn_spec={"weight": wcomp_w(0.15), "delay": 1.0})
 
-        sw_sh_deep, sw_rip_deep = make_swr_event_generators(
+        sw_sh_deep, sw_rip_deep = _swr(
             n=N_ca3_deep, start_ms=swr_s, stop_ms=swr_e,
             sharpwave_rate=swr_sharpwave_rate * 0.35,
             ripple_rate_mean=swr_ripple_mean * 0.35,
@@ -1320,21 +1357,21 @@ def build_replay_network(
         sim.Connect(sw_sh_deep,  CA3_DEEP, conn_spec="one_to_one", syn_spec={"weight": wcomp_w(0.35), "delay": 1.0})
         sim.Connect(sw_rip_deep, CA3_DEEP, conn_spec="one_to_one", syn_spec={"weight": wcomp_w(0.15), "delay": 1.0})
 
-        _, sw_rip_int_sup = make_swr_event_generators(
+        _, sw_rip_int_sup = _swr(
             n=N_ca3_int_sup, start_ms=swr_s, stop_ms=swr_e,
             sharpwave_rate=0.0, ripple_rate_mean=swr_ripple_mean,
             ripple_rate_amp=swr_ripple_amp, ripple_hz=swr_ripple_hz)
         sim.Connect(sw_rip_int_sup, CA3_INT_SUP, conn_spec="one_to_one",
                      syn_spec={"weight": 0.60, "delay": 1.0})
 
-        _, sw_rip_int_deep = make_swr_event_generators(
+        _, sw_rip_int_deep = _swr(
             n=N_ca3_int_deep, start_ms=swr_s, stop_ms=swr_e,
             sharpwave_rate=0.0, ripple_rate_mean=swr_ripple_mean,
             ripple_rate_amp=swr_ripple_amp, ripple_hz=swr_ripple_hz)
         sim.Connect(sw_rip_int_deep, CA3_INT_DEEP, conn_spec="one_to_one",
                      syn_spec={"weight": 0.60, "delay": 1.0})
 
-        sw_sh_c1, sw_rip_c1 = make_swr_event_generators(
+        sw_sh_c1, sw_rip_c1 = _swr(
             n=N_ca1_pyr, start_ms=swr_s, stop_ms=swr_e,
             sharpwave_rate=swr_sharpwave_rate * 0.6,
             ripple_rate_mean=swr_ripple_mean * 0.6,
@@ -1342,7 +1379,7 @@ def build_replay_network(
         sim.Connect(sw_sh_c1,  CA1_PYR, conn_spec="one_to_one", syn_spec={"weight": wcomp_w(0.20), "delay": 1.0})
         sim.Connect(sw_rip_c1, CA1_PYR, conn_spec="one_to_one", syn_spec={"weight": wcomp_w(0.10), "delay": 1.0})
 
-        _, sw_rip_c1b = make_swr_event_generators(
+        _, sw_rip_c1b = _swr(
             n=N_ca1_basket, start_ms=swr_s, stop_ms=swr_e,
             sharpwave_rate=0.0,
             ripple_rate_mean=swr_ripple_mean * 0.8,
@@ -5063,6 +5100,18 @@ Dentate gyrus (Phase 6.2):
         help="Experiment (WORKLOG section 10): feedforward PV pool onto EC LV, as "
              "--ec-lii-ff-inhib. Off by default.")
     parser.add_argument(
+        "--ca3-drive-scale", type=float, default=1.0, metavar="S",
+        help="Experiment (WORKLOG section 14): multiply the constant Poisson inputs to "
+             "CA3 (tonic, EC, drive) by S, so SWR replay can stand out. Default 1.")
+    parser.add_argument(
+        "--swr-bg-gain", type=float, default=None, metavar="G",
+        help="Experiment (WORKLOG section 14): give the sharp-wave/ripple background in "
+             "EVERY epoch (default: epoch 0 only), with rates x G. Off by default.")
+    parser.add_argument(
+        "--w-eclv-mpfc", type=float, default=1.8, metavar="W",
+        help="Experiment (WORKLOG section 14): EC LV -> mPFC weight in mV. Default 1.8 "
+             "(set for the old, 73%%-active EC LV).")
+    parser.add_argument(
         "--ec-lv-ie-shift", type=float, default=0.0, metavar="X",
         help="Experiment (WORKLOG section 10): add X to every EC LV cell's I_e "
              "(e.g. -1). Default 0.")
@@ -5718,6 +5767,8 @@ Dentate gyrus (Phase 6.2):
         n_threads      = n_threads,
         suppress_dg_drive = args.dg,   # real DG mossy fibres replace the proxy
         theta_on       = not args.no_theta,
+        ca3_drive_scale = args.ca3_drive_scale,
+        swr_bg_gain    = args.swr_bg_gain,
         n_patterns     = args.n_patterns,
         train_pattern  = args.train_pattern,
         pattern_source = args.pattern_source,
@@ -5938,6 +5989,7 @@ Dentate gyrus (Phase 6.2):
                 group_frac = args.cortex_group_frac,
                 n_groups   = net["n_seq_groups"],
                 seed_connect = (args.seed if args.seed is not None else 42),
+                w_eclv_mpfc = args.w_eclv_mpfc,
             )
 
     if args.ec_lii_ff_inhib is not None and ec_module is not None:
