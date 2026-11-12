@@ -1,0 +1,638 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tinyHippo Viewer</title>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --ink: #1c2330; --muted: #5d6778; --line: #dde1e8;
+  --accent: #2f6fdf; --exc: #2f6fdf; --inh: #d2453b; --fwd: rgba(47,111,223,.13); --rev: rgba(210,69,59,.12);
+  --rest: rgba(120,120,120,.08); --hi: #f0a400;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1218; --panel: #171b23; --ink: #e3e7ee; --muted: #9aa3b2; --line: #2a303b;
+    --accent: #6ea0ff; --exc: #6ea0ff; --inh: #ff7a6e; --fwd: rgba(110,160,255,.16); --rev: rgba(255,122,110,.14);
+    --rest: rgba(200,200,200,.06); --hi: #ffc23d;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 -apple-system, system-ui, sans-serif; }
+header { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 12px 16px;
+  background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; }
+header h1 { font-size: 16px; margin: 0 12px 0 0; }
+main { max-width: 1280px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; min-width: 0; }
+section h2 { font-size: 15px; margin: 0 0 4px; }
+.hint { color: var(--muted); font-size: 13px; margin: 0 0 10px; }
+button, select, input { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line);
+  border-radius: 6px; padding: 5px 9px; }
+button { cursor: pointer; } button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.card { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.card b { display: block; font-size: 18px; }
+.card span { color: var(--muted); font-size: 12px; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 900px) { .two { grid-template-columns: 1fr; } }
+svg text { fill: var(--ink); font-size: 11px; }
+canvas { width: 100%; display: block; border-radius: 6px; background: var(--bg); }
+#circuit { width: 100%; height: auto; display: block; }
+.tip { position: fixed; pointer-events: none; background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+  padding: 6px 8px; font-size: 12px; max-width: 320px; box-shadow: 0 4px 14px rgba(0,0,0,.15); display: none; z-index: 20; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+td, th { text-align: left; padding: 3px 6px; border-bottom: 1px solid var(--line); }
+th { color: var(--muted); font-weight: 600; }
+.pill { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 12px; border: 1px solid var(--line); }
+.link { color: var(--accent); cursor: pointer; text-decoration: underline; }
+pre { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; font-size: 12px;
+  max-height: 260px; overflow: auto; white-space: pre-wrap; margin: 0; }
+dialog { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--ink); max-width: 520px; width: 92vw; }
+dialog label { display: block; margin: 8px 0 2px; color: var(--muted); font-size: 13px; }
+dialog input, dialog select { width: 100%; }
+.legend span { margin-right: 12px; font-size: 12px; color: var(--muted); }
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: middle; margin-right: 4px; }
+.empty { color: var(--muted); padding: 30px; text-align: center; }
+dl.glossary { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0; }
+dl.glossary dt { font-weight: 600; }
+dl.glossary dd { margin: 0; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>tinyHippo Viewer</h1>
+  <label>Run <select id="runSel"></select></label>
+  <span id="runState" class="pill"></span>
+  <button id="newBtn" class="primary">New run</button>
+</header>
+
+<main>
+  <section id="statusBox" style="display:none">
+    <h2>Run in progress</h2>
+    <p class="hint">The simulation writes its log here. Spikes and wiring appear when it finishes.</p>
+    <pre id="logBox"></pre>
+  </section>
+
+  <div id="dataArea" style="display:grid;gap:16px">
+  <section>
+    <h2>What happened in this run</h2>
+    <p class="hint">The model "learns" during awake blocks and replays the learned sequence during sleep ripples (SWRs).
+      After the sleep blocks the hippocampus is cut off (lesion), and the cortex is tested on whether it still recalls the patterns.</p>
+    <div class="cards" id="cards"></div>
+    <details style="margin-top:10px"><summary>Key lines from the simulation log</summary><pre id="metrics"></pre></details>
+  </section>
+
+  <section>
+    <h2>The circuit: who talks to whom</h2>
+    <p class="hint">Each circle is a population of neurons. Arrows are connections (thicker = more synapses;
+      <span style="color:var(--exc)">blue = excitatory</span>, <span style="color:var(--inh)">red = inhibitory</span>).
+      Press play: a circle lights up when its neurons fire, an arrow lights up when it carries spikes. Hover anything for numbers. Click a circle to look at its neurons below.</p>
+    <svg id="circuit" viewBox="0 0 1000 565"></svg>
+    <div class="row" style="margin-top:8px">
+      <button id="playBtn">▶ Play</button>
+      <label>Speed <select id="speedSel"><option value="0.05">slow</option><option value="0.15" selected>normal</option><option value="0.5">fast</option></select></label>
+      <input id="tSlider" type="range" min="0" max="1000" step="1" value="0" style="flex:1;min-width:200px">
+      <b id="tLabel" style="min-width:90px"></b>
+      <span id="phaseLabel" class="pill"></span>
+    </div>
+    <canvas id="timeline" height="70" style="margin-top:6px;cursor:pointer"></canvas>
+    <div class="legend" style="margin-top:4px">
+      <span><i class="sw" style="background:var(--fwd)"></i>forward replay ripple</span>
+      <span><i class="sw" style="background:var(--rev)"></i>reverse replay ripple</span>
+      <span><i class="sw" style="background:var(--rest)"></i>after sleep: lesion + recall test</span>
+      <span>line = total spikes per 5 ms (click to jump)</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>Replay: the learned sequence, played fast during each ripple</h2>
+    <p class="hint">CA3 stores a sequence of 10 groups of cells: group 1 → 2 → … → 10.
+      In each chart, rows are the 10 groups (group 1 at the bottom) and time runs left to right; bright = firing.
+      The dots mark when each group fired on average, inside the ripple (dashed lines).
+      <b>Forward replay:</b> the dots climb (1 first, 10 last), ρ near +1.
+      <b>Reverse replay:</b> the dots fall (10 first, 1 last), ρ near −1.
+      In this model all groups fire in one burst, so the order is squeezed into a few milliseconds:
+      the lower chart zooms in on it. Click a card to jump there in the spike view.</p>
+    <div id="replay" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px"></div>
+  </section>
+
+  <section>
+    <h2>Spikes: every neuron, around the current time</h2>
+    <p class="hint">One dot = one spike. Each band is one population; inside a band, each row is one neuron.
+      <b>Click a dot</b> to open that neuron and see why it fired.</p>
+    <div class="row" style="margin-bottom:6px">
+      <label>Window <select id="winSel"><option>50</option><option selected>150</option><option>400</option></select> ms</label>
+      <span class="hint" style="margin:0" id="rasterInfo"></span>
+    </div>
+    <canvas id="raster" height="560" style="cursor:crosshair"></canvas>
+  </section>
+
+  <section id="neuronBox">
+    <h2>Neuron inspector</h2>
+    <div id="neuron" class="empty">Click a spike in the raster above.</div>
+  </section>
+  </div>
+
+  <section>
+    <h2>Glossary</h2>
+    <dl class="glossary" id="glossary"></dl>
+  </section>
+</main>
+
+<dialog id="newDlg">
+  <h2 style="margin-top:0">New run</h2>
+  <form method="dialog" id="newForm">
+    <label>Name (letters, digits, - or _)</label><input name="name" required pattern="[A-Za-z0-9_-]{1,40}">
+    <label>What to simulate</label><select name="preset" id="presetSel"></select>
+    <label>Scale (% of a real rat hippocampus)</label>
+    <select name="scale"><option value="1" selected>1% (about 23k neurons with the dentate gyrus)</option><option value="2">2%</option><option value="3">3%</option></select>
+    <label>Sleep blocks (each = 1 s of model time with 2 ripples)</label><input name="n_swr" type="number" min="1" max="20" value="4">
+    <label>Seed (change it to get an independent repeat)</label><input name="seed" type="number" value="202">
+    <label>CPU threads</label><input name="threads" type="number" min="1" max="16" value="8">
+    <p class="hint" id="estimate" style="margin-top:10px"></p>
+    <p class="hint" id="launchErr" style="color:var(--inh)"></p>
+    <div class="row" style="justify-content:flex-end">
+      <button value="cancel" formnovalidate>Cancel</button>
+      <button class="primary" id="launchBtn" value="default">Start</button>
+    </div>
+  </form>
+</dialog>
+
+<div class="tip" id="tip"></div>
+
+<script>
+// ------------------------------------------------------------------ static info
+const POP = {
+  ec_lii:      {label: "EC LII",     x: 110, y: 80,  role: "Entorhinal cortex, layer II. The input gate: it sends the pattern into the hippocampus (to DG and CA3) and gets CA1's output back."},
+  dg_gc:       {label: "DG granule", x: 110, y: 290, role: "Dentate gyrus granule cells. Pattern separation: only a few percent fire for each pattern, so similar inputs get different codes."},
+  dg_basket:   {label: "DG basket",  x: 40,  y: 440, role: "DG inhibitory cells. They keep the granule cells sparse.", inh: true},
+  dg_mc_low:   {label: "MC low",     x: 150, y: 470, role: "DG mossy cells, low threshold. Excitatory feedback inside DG."},
+  dg_mc_high:  {label: "MC high",    x: 250, y: 420, role: "DG mossy cells, high threshold. Excitatory feedback inside DG that needs stronger input."},
+  ca3_sup:     {label: "CA3 SUP",    x: 430, y: 290, role: "CA3 superficial pyramidal cells. They store the sequence in recurrent connections and replay it during ripples (forward and reverse)."},
+  ca3_deep:    {label: "CA3 DEEP",   x: 430, y: 470, role: "CA3 deep pyramidal cells. They get CA3 SUP output and pass it on to CA1."},
+  ca3_int_sup: {label: "CA3 int sup",x: 330, y: 400, role: "CA3 inhibitory cells for the superficial layer.", inh: true},
+  ca3_int_deep:{label: "CA3 int deep",x: 540, y: 420, role: "CA3 inhibitory cells for the deep layer.", inh: true},
+  ca1_pyr:     {label: "CA1 PYR",    x: 680, y: 290, role: "CA1 pyramidal cells. The hippocampus output: they send the replayed sequence to the cortex (EC)."},
+  ca1_basket:  {label: "CA1 basket", x: 780, y: 440, role: "CA1 fast inhibitory cells. They pace the ripple rhythm.", inh: true},
+  ca1_olm:     {label: "CA1 OLM",    x: 630, y: 460, role: "CA1 slow inhibitory cells on the dendrites.", inh: true},
+  ec_lv:       {label: "EC LV",      x: 680, y: 80,  role: "Entorhinal cortex, layer V. It receives CA1 output and relays it to the prefrontal cortex."},
+  mpfc:        {label: "mPFC",       x: 900, y: 80,  role: "Medial prefrontal cortex. The long-term store: consolidation means a pattern gets written here during sleep."},
+  mpfc_int:    {label: "mPFC int",   x: 900, y: 250, role: "mPFC inhibitory cells.", inh: true},
+};
+const COLORS = ["#4e79a7","#f28e2b","#59a14f","#e15759","#76b7b2","#edc948","#b07aa1","#ff9da7","#9c755f","#86bcb6","#d37295","#a0cbe8","#8cd17d","#f1ce63","#bab0ac"];
+const TERMS = [
+  ["Spike", "A neuron's electrical pulse. It is how neurons talk: a spike travels down the connection and changes the target's voltage after a short delay."],
+  ["Synapse / connection", "One link from a sending neuron to a receiving neuron, with a weight (how strong) and a delay (how long the spike takes)."],
+  ["Excitatory / inhibitory", "Excitatory input pushes the target toward firing (positive weight); inhibitory input holds it back (negative weight)."],
+  ["SWR (sharp-wave ripple)", "A short burst of fast activity during sleep or rest. In it, CA3 replays the learned sequence in fast-forward."],
+  ["Forward / reverse replay", "The sequence plays in the learned order (forward) or backwards (reverse). Quality is scored with Spearman ρ: +1 = perfect forward, −1 = perfect reverse."],
+  ["Consolidation", "Moving a memory from the hippocampus into the cortex. Here: replay strengthens CA1→EC synapses (tag → capture → late-LTP)."],
+  ["Lesion test", "After sleep, the model cuts the hippocampus off and cues the cortex with part of a pattern. If the cortex completes the right pattern, the memory was consolidated."],
+  ["Why did it fire?", "For one spike, the inspector lists the input spikes that arrived in the 5 ms before it (send time + delay). These are the likely causes."],
+];
+
+// ------------------------------------------------------------------ state
+let S = null;             // summary of current run
+let T = 0;                // current time (ms)
+let playing = false, lastFrame = 0;
+let rasterData = null, rasterWin = [0, 0], rasterFetch = 0;
+let selected = null;      // {pop, idx, t}
+const $ = id => document.getElementById(id);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const api = async (path, opts) => { const r = await fetch(path, opts); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); return j; };
+const fmt = n => n >= 1e6 ? (n/1e6).toFixed(1)+"M" : n >= 1e3 ? (n/1e3).toFixed(1)+"k" : String(Math.round(n*10)/10);
+const popColor = name => COLORS[(S ? S.pops.findIndex(p => p.name === name) : 0) % COLORS.length];
+const label = name => (POP[name] || {label: name}).label;
+
+// ------------------------------------------------------------------ runs
+async function refreshRuns(keep) {
+  const {runs, presets} = await api("/api/runs");
+  const sel = $("runSel"), cur = keep || sel.value;
+  sel.innerHTML = runs.map(r => `<option value="${r.name}">${r.name} — ${r.state}${r.has_wiring ? "" : r.has_spikes ? " (no wiring)" : ""}</option>`).join("");
+  if (runs.some(r => r.name === cur)) sel.value = cur;
+  $("presetSel").innerHTML = Object.entries(presets).map(([k, v]) => `<option value="${k}">${v}</option>`).join("");
+  return runs;
+}
+let runsCache = [];
+async function loadRun() {
+  runsCache = await refreshRuns();
+  const r = runsCache.find(x => x.name === $("runSel").value);
+  if (!r) { $("cards").innerHTML = '<div class="empty">No runs yet. Press "New run".</div>'; return; }
+  $("runState").textContent = r.state;
+  $("statusBox").style.display = r.state === "running" || !r.has_spikes || !r.has_wiring ? "" : "none";
+  pollLog(r.name);
+  $("dataArea").style.display = r.has_spikes ? "grid" : "none";
+  if (!r.has_spikes) { S = null; playing = false; return; }
+  S = await api(`/api/summary?run=${encodeURIComponent(r.name)}`);
+  $("tSlider").max = Math.ceil(S.t_max);
+  T = S.windows.length ? S.windows[0].start - 20 : 0;
+  rasterData = null; selected = null;
+  $("neuron").innerHTML = '<div class="empty">Click a spike in the raster above.</div>';
+  drawCards(); drawCircuit(); drawTimeline(); drawReplay(); setTime(T);
+}
+let logTimer = null;
+async function pollLog(name) {
+  clearTimeout(logTimer);
+  if ($("statusBox").style.display === "none") return;
+  const {lines} = await api(`/api/log?run=${encodeURIComponent(name)}`);
+  $("logBox").textContent = lines.join("\n") || "(no log yet)";
+  $("logBox").scrollTop = 1e9;
+  const runs = await refreshRuns(name);
+  const r = runs.find(x => x.name === name);
+  if (r && r.state !== "running" && r.has_spikes && r.has_wiring) return loadRun();
+  if (r && r.state === "running") logTimer = setTimeout(() => pollLog(name), 3000);
+}
+
+// ------------------------------------------------------------------ summary cards
+function drawCards() {
+  const nN = S.pops.reduce((a, p) => a + p.n, 0), nS = S.pops.reduce((a, p) => a + p.n_spikes, 0);
+  const nSyn = S.matrix ? S.matrix.reduce((a, m) => a + m.count, 0) : null;
+  const fwd = S.windows.filter(w => w.kind === "fwd").length, rev = S.windows.filter(w => w.kind === "rev").length;
+  const c = [
+    [fmt(nN), "neurons in 15 populations".replace("15", S.pops.length)],
+    [nSyn ? fmt(nSyn) : "—", nSyn ? "connections between them" : "wiring not exported yet"],
+    [fmt(nS), "spikes recorded"],
+    [(S.t_max/1000).toFixed(1) + " s", "of model time"],
+    [`${fwd} + ${rev}`, "forward + reverse replay ripples"],
+  ];
+  // Replay quality and consolidation, read from the simulation log.
+  const rho = kind => { const l = S.metrics.find(l => new RegExp(`SWR-\\d+ ${kind}.*rho=`).test(l)); return l && l.match(/rho=([+-]?[\d.]+).*\[(\w+)\]/); };
+  const f = rho("forward"), r = rho("reverse");
+  if (f) c.push([f[1], `forward replay ρ (CA3, +1 = perfect order) · ${f[2]}`]);
+  if (r) c.push([r[1], `reverse replay ρ (−1 = perfect reverse) · ${r[2]}`]);
+  const ltp = S.metrics.find(l => /STC history:.*L-LTP synapses/.test(l));
+  if (ltp) c.push([ltp.match(/(\d[\d,]*) L-LTP synapses/)[1], "synapses consolidated (late-LTP) in CA1→EC"]);
+  $("cards").innerHTML = c.map(([b, s]) => `<div class="card"><b>${b}</b><span>${s}</span></div>`).join("")
+    + S.pops.slice().sort((a, b) => a.gid_first - b.gid_first).filter(p => ["dg_gc","ca3_sup","ca1_pyr","mpfc"].includes(p.name))
+      .map(p => `<div class="card"><b>${(p.active_frac*100).toFixed(1)}%</b><span>of ${label(p.name)} fired at least once · ${p.mean_rate.toFixed(1)} Hz mean</span></div>`).join("");
+  $("metrics").textContent = S.metrics.join("\n") || "(no log found for this run)";
+}
+
+// ------------------------------------------------------------------ circuit map
+let nodeEls = {}, edgeEls = [];
+function drawCircuit() {
+  const svg = $("circuit"); svg.innerHTML = "";
+  const ns = "http://www.w3.org/2000/svg", mk = (t, a, p = svg) => { const e = document.createElementNS(ns, t); for (const k in a) e.setAttribute(k, a[k]); p.appendChild(e); return e; };
+  const defs = mk("defs", {});
+  for (const [id, col] of [["ae", css("--exc")], ["ai", css("--inh")]]) {
+    const m = mk("marker", {id, viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 9, markerHeight: 9, markerUnits: "userSpaceOnUse", orient: "auto-start-reverse"}, defs);
+    mk("path", {d: "M0,0 L10,5 L0,10 z", fill: col}, m);
+  }
+  // region labels
+  for (const [x, y, t] of [[110, 20, "Entorhinal cortex"], [150, 555, "Dentate gyrus"], [430, 555, "CA3"], [700, 555, "CA1"], [900, 20, "Prefrontal cortex"]])
+    mk("text", {x, y, "text-anchor": "middle", style: "font-size:12px;fill:var(--muted);font-weight:600"}).textContent = t;
+  const pops = S.pops.filter(p => POP[p.name]);
+  const R = p => 9 + 4.2 * Math.sqrt(Math.log10(p.n + 1) * 6);
+  const pos = Object.fromEntries(pops.map(p => [p.name, {...POP[p.name], r: R(p)}]));
+  edgeEls = [];
+  if (S.matrix) {
+    const maxC = Math.max(...S.matrix.map(m => m.count));
+    const eg = mk("g", {});
+    for (const m of S.matrix) {
+      const a = pos[m.src], b = pos[m.tgt]; if (!a || !b) continue;
+      const inh = m.mean_w < 0, col = inh ? "var(--inh)" : "var(--exc)";
+      const w = 0.6 + 4.5 * Math.log(1 + m.count) / Math.log(1 + maxC);
+      let d;
+      if (m.src === m.tgt) { // self loop
+        d = `M${a.x - a.r*0.6},${a.y - a.r*0.8} C${a.x - a.r*2.4},${a.y - a.r*3.2} ${a.x + a.r*2.4},${a.y - a.r*3.2} ${a.x + a.r*0.6},${a.y - a.r*0.8}`;
+      } else {
+        const dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy), ux = dx / L, uy = dy / L;
+        const sx = a.x + ux * a.r, sy = a.y + uy * a.r, tx = b.x - ux * (b.r + 3), ty = b.y - uy * (b.r + 3);
+        const bend = 0.12 * L, cx = (sx + tx) / 2 - uy * bend, cy = (sy + ty) / 2 + ux * bend;
+        d = `M${sx},${sy} Q${cx},${cy} ${tx},${ty}`;
+      }
+      const path = mk("path", {d, fill: "none", stroke: col, "stroke-width": w, "stroke-opacity": 0.18, "marker-end": `url(#${inh ? "ai" : "ae"})`}, eg);
+      path.style.cursor = "help";
+      const tipTxt = `<b>${label(m.src)} → ${label(m.tgt)}</b><br>${fmt(m.count)} synapses (${m.per_target} per receiving neuron)<br>mean weight ${m.mean_w} (${inh ? "inhibitory" : "excitatory"}) · mean delay ${m.mean_delay} ms`;
+      path.addEventListener("mousemove", e => tip(e, tipTxt)); path.addEventListener("mouseleave", untip);
+      edgeEls.push({el: path, src: m.src, base: 0.18});
+    }
+  }
+  nodeEls = {};
+  for (const p of pops) {
+    const q = pos[p.name], g = mk("g", {style: "cursor:pointer"});
+    const halo = mk("circle", {cx: q.x, cy: q.y, r: q.r + 8, fill: css("--hi"), opacity: 0}, g);
+    const c = mk("circle", {cx: q.x, cy: q.y, r: q.r, fill: popColor(p.name), stroke: q.inh ? "var(--inh)" : "var(--panel)", "stroke-width": q.inh ? 2.5 : 1.5}, g);
+    mk("text", {x: q.x, y: q.y + q.r + 13, "text-anchor": "middle", style: "font-weight:600"}, g).textContent = q.label;
+    const hz = mk("text", {x: q.x, y: q.y + q.r + 26, "text-anchor": "middle", style: "fill:var(--muted)"}, g);
+    const t = `<b>${q.label}</b> · ${fmt(p.n)} neurons${q.inh ? " · inhibitory" : ""}<br>${q.role}<br><br>${(p.active_frac*100).toFixed(1)}% fired at least once · mean ${p.mean_rate.toFixed(2)} Hz`;
+    g.addEventListener("mousemove", e => tip(e, t)); g.addEventListener("mouseleave", untip);
+    g.addEventListener("click", () => { $("raster").scrollIntoView({behavior: "smooth", block: "center"}); highlightPop = p.name; drawRaster(); });
+    nodeEls[p.name] = {halo, c, hz, maxRate: Math.max(1, ...p.rate)};
+  }
+  if (!S.matrix) mk("text", {x: 500, y: 200, "text-anchor": "middle", style: "fill:var(--muted)"}).textContent = "Arrows appear once the wiring is exported (viewer/export_wiring.py).";
+}
+function updateCircuit() {
+  const b = Math.min(Math.floor(T / S.bin_ms), S.pops[0].rate.length - 1);
+  // average over 4 bins (20 ms) so the glow is readable
+  const rateAt = p => { let s = 0, n = 0; for (let k = Math.max(0, b - 3); k <= b; k++) { s += p.rate[k] || 0; n++; } return s / n; };
+  const act = {};
+  for (const p of S.pops) {
+    const e = nodeEls[p.name]; if (!e) continue;
+    const r = rateAt(p), a = Math.min(1, r / (e.maxRate * 0.6));
+    act[p.name] = a;
+    e.halo.setAttribute("opacity", (0.75 * a).toFixed(3));
+    e.c.setAttribute("opacity", (0.35 + 0.65 * a).toFixed(3));
+    e.hz.textContent = r.toFixed(1) + " Hz";
+  }
+  for (const e of edgeEls) e.el.setAttribute("stroke-opacity", (e.base + 0.75 * (act[e.src] || 0)).toFixed(3));
+}
+
+// ------------------------------------------------------------------ time
+function phaseAt(t) {
+  const w = S.windows.find(w => t >= w.start && t <= w.stop);
+  if (w) return w.kind === "fwd" ? "forward replay ripple" : "reverse replay ripple";
+  if (t > S.sleep_end) return "after sleep: lesion + recall test";
+  return `block ${Math.floor(t / 1000) + 1}: between ripples`;
+}
+function setTime(t) {
+  T = Math.max(0, Math.min(S.t_max, t));
+  $("tSlider").value = T; $("tLabel").textContent = T.toFixed(0) + " ms";
+  $("phaseLabel").textContent = phaseAt(T);
+  updateCircuit(); drawTimelineCursor(); maybeFetchRaster();
+}
+$("tSlider").addEventListener("input", e => { playing = false; $("playBtn").textContent = "▶ Play"; setTime(+e.target.value); });
+$("playBtn").addEventListener("click", () => { playing = !playing; $("playBtn").textContent = playing ? "⏸ Pause" : "▶ Play"; lastFrame = performance.now(); if (playing) requestAnimationFrame(tick); });
+function tick(now) {
+  if (!playing || !S) return;
+  const dt = now - lastFrame; lastFrame = now;
+  let t = T + dt * +$("speedSel").value;
+  if (t >= S.t_max) t = 0;
+  setTime(t); requestAnimationFrame(tick);
+}
+
+let tlBase = null;
+function drawTimeline() {
+  const cv = $("timeline"), dpr = devicePixelRatio || 1, W = cv.clientWidth, H = 70;
+  cv.width = W * dpr; cv.height = H * dpr; const g = cv.getContext("2d"); g.scale(dpr, dpr);
+  const x = t => t / S.t_max * W;
+  g.fillStyle = css("--rest"); g.fillRect(x(S.sleep_end), 0, W - x(S.sleep_end), H);
+  for (const w of S.windows) { g.fillStyle = css(w.kind === "fwd" ? "--fwd" : "--rev"); g.fillRect(x(w.start), 0, Math.max(2, x(w.stop) - x(w.start)), H); }
+  const n = S.pops[0].rate.length, tot = new Float64Array(n);
+  for (const p of S.pops) for (let k = 0; k < n; k++) tot[k] += p.rate[k] * p.n * S.bin_ms / 1000;
+  const mx = Math.max(...tot) || 1;
+  g.strokeStyle = css("--ink"); g.lineWidth = 1; g.beginPath();
+  for (let k = 0; k < n; k++) { const xx = k / n * W, yy = H - 4 - (H - 10) * Math.sqrt(tot[k] / mx); k ? g.lineTo(xx, yy) : g.moveTo(xx, yy); }
+  g.stroke();
+  g.fillStyle = css("--muted"); g.font = "11px system-ui";
+  for (let s = 0; s <= S.t_max; s += 1000) { g.fillRect(x(s), H - 3, 1, 3); g.fillText(s / 1000 + " s", x(s) + 2, 11); }
+  tlBase = g.getImageData(0, 0, cv.width, cv.height);
+  drawTimelineCursor();
+}
+function drawTimelineCursor() {
+  if (!tlBase) return;
+  const cv = $("timeline"), g = cv.getContext("2d"); g.putImageData(tlBase, 0, 0);
+  const W = cv.clientWidth, xx = T / S.t_max * W;
+  g.fillStyle = css("--hi"); g.fillRect(xx - 1, 0, 2, 70);
+}
+$("timeline").addEventListener("click", e => { const r = e.target.getBoundingClientRect(); setTime((e.clientX - r.left) / r.width * S.t_max); });
+
+// ------------------------------------------------------------------ replay charts
+function drawReplay() {
+  const box = $("replay");
+  if (!S.replay.length) { box.innerHTML = '<p class="hint">This run has no CA3 sequence groups.</p>'; return; }
+  box.innerHTML = S.replay.map((r, k) => {
+    const block = Math.floor(r.start / 1000) + 1, fwd = r.kind === "fwd";
+    const good = r.rho != null && (fwd ? r.rho > 0.5 : r.rho < -0.5);
+    const ts = r.mean_t.filter(t => t != null), spread = ts.length ? Math.max(...ts) - Math.min(...ts) : 0;
+    return `<div class="card" style="cursor:pointer" data-k="${k}">
+      <div style="font-size:13px"><strong style="color:${fwd ? "var(--exc)" : "var(--inh)"}">${fwd ? "Forward" : "Reverse"}</strong> · block ${block}
+        · ρ = <strong>${r.rho == null ? "—" : (r.rho > 0 ? "+" : "") + r.rho.toFixed(2)}</strong> ${r.rho == null ? "" : good ? "✓ replay" : "✗ no clear order"}</div>
+      <canvas class="heat" height="110" style="margin-top:4px"></canvas>
+      <span>${r.start.toFixed(0)}–${r.stop.toFixed(0)} ms · whole ripple</span>
+      <canvas class="zoom" height="90" style="margin-top:6px"></canvas>
+      <span>zoomed: firing order of the 10 groups, spread over only ${spread.toFixed(1)} ms</span></div>`;
+  }).join("");
+  box.querySelectorAll(".card").forEach(card => {
+    const r = S.replay[+card.dataset.k], cv = card.querySelector("canvas.heat");
+    drawZoom(card.querySelector("canvas.zoom"), r);
+    const dpr = devicePixelRatio || 1, W = cv.clientWidth, H = 110, L = 26;
+    cv.width = W * dpr; cv.height = H * dpr; const g = cv.getContext("2d"); g.scale(dpr, dpr);
+    const G = r.heat.length, nb = r.heat[0].length, cw = (W - L) / nb, rh = (H - 14) / G;
+    const mx = Math.max(1, ...r.heat.flat());
+    for (let k = 0; k < G; k++) for (let b = 0; b < nb; b++) {
+      const v = Math.sqrt(r.heat[k][b] / mx);
+      g.fillStyle = `rgba(${fwdRGB(r.kind)},${v.toFixed(3)})`;
+      g.fillRect(L + b * cw, H - 14 - (k + 1) * rh, cw + 0.5, rh + 0.5);
+    }
+    const x = t => L + (t - r.t0) / r.bin_ms * cw;
+    g.strokeStyle = css("--muted"); g.setLineDash([3, 3]); g.lineWidth = 1;
+    for (const t of [r.start, r.stop]) { g.beginPath(); g.moveTo(x(t), 0); g.lineTo(x(t), H - 14); g.stroke(); }
+    g.setLineDash([]);
+    g.strokeStyle = css("--hi"); g.fillStyle = css("--hi"); g.lineWidth = 2; g.beginPath();
+    let first = true;
+    r.mean_t.forEach((t, k) => { if (t == null) return; const yy = H - 14 - (k + 0.5) * rh; first ? g.moveTo(x(t), yy) : g.lineTo(x(t), yy); first = false; });
+    g.stroke();
+    r.mean_t.forEach((t, k) => { if (t == null) return; g.beginPath(); g.arc(x(t), H - 14 - (k + 0.5) * rh, 3, 0, 7); g.fill(); });
+    g.fillStyle = css("--muted"); g.font = "10px system-ui"; g.textBaseline = "middle";
+    g.fillText("g1", 2, H - 14 - 0.5 * rh); g.fillText("g" + G, 2, H - 14 - (G - 0.5) * rh);
+    g.textBaseline = "alphabetic"; g.fillText("time →", L, H - 2);
+    card.addEventListener("click", () => { setTime((r.start + r.stop) / 2); $("raster").scrollIntoView({behavior: "smooth", block: "center"}); });
+  });
+}
+const fwdRGB = kind => kind === "fwd" ? "47,111,223" : "210,69,59";
+// Mean firing time per group on its own (zoomed) time axis, so a few-ms order is visible.
+function drawZoom(cv, r) {
+  const dpr = devicePixelRatio || 1, W = cv.clientWidth, H = 90, L = 26, B = 14;
+  cv.width = W * dpr; cv.height = H * dpr; const g = cv.getContext("2d"); g.scale(dpr, dpr);
+  const pts = r.mean_t.map((t, k) => [t, k]).filter(([t]) => t != null);
+  if (pts.length < 2) return;
+  const G = r.mean_t.length, lo = Math.min(...pts.map(p => p[0])), hi = Math.max(...pts.map(p => p[0])), span = Math.max(hi - lo, 0.5);
+  const x = t => L + 6 + (t - lo) / span * (W - L - 14), y = k => H - B - (k + 0.5) * (H - B - 4) / G;
+  g.fillStyle = css("--bg"); g.fillRect(L, 0, W - L, H - B);
+  g.strokeStyle = `rgb(${fwdRGB(r.kind)})`; g.lineWidth = 1.5; g.beginPath();
+  pts.forEach(([t, k], j) => j ? g.lineTo(x(t), y(k)) : g.moveTo(x(t), y(k))); g.stroke();
+  g.fillStyle = css("--hi"); pts.forEach(([t, k]) => { g.beginPath(); g.arc(x(t), y(k), 3, 0, 7); g.fill(); });
+  g.fillStyle = css("--muted"); g.font = "10px system-ui"; g.textBaseline = "middle";
+  g.fillText("g1", 2, y(0)); g.fillText("g" + G, 2, y(G - 1));
+  g.textBaseline = "alphabetic"; g.fillText(lo.toFixed(1) + " ms", L, H - 2);
+  const hiTxt = hi.toFixed(1) + " ms"; g.fillText(hiTxt, W - g.measureText(hiTxt).width - 2, H - 2);
+}
+
+// ------------------------------------------------------------------ raster
+let highlightPop = null, rasterLayout = null;
+function maybeFetchRaster() {
+  const win = +$("winSel").value, t0 = T - win / 2, t1 = T + win / 2;
+  if (rasterData && t0 >= rasterWin[0] && t1 <= rasterWin[1]) return drawRaster();
+  const pad = win * 2, f0 = Math.max(0, t0 - pad), f1 = t1 + pad, id = ++rasterFetch;
+  api(`/api/spikes?run=${encodeURIComponent(S.name)}&t0=${f0}&t1=${f1}`).then(d => {
+    if (id !== rasterFetch) return;
+    rasterData = d; rasterWin = [f0, f1]; drawRaster();
+  });
+  if (rasterData) drawRaster();
+}
+$("winSel").addEventListener("change", () => { rasterData = null; maybeFetchRaster(); });
+function drawRaster() {
+  if (!rasterData) return;
+  const cv = $("raster"), dpr = devicePixelRatio || 1, W = cv.clientWidth, H = 560, L = 92;
+  cv.width = W * dpr; cv.height = H * dpr; const g = cv.getContext("2d"); g.scale(dpr, dpr);
+  const win = +$("winSel").value, t0 = T - win / 2, t1 = T + win / 2, x = t => L + (t - t0) / win * (W - L - 6);
+  const order = Object.keys(POP), rank = p => { const k = order.indexOf(p.name); return k < 0 ? 99 : k; };
+  const pops = S.pops.slice().sort((a, b) => rank(a) - rank(b)), wts = pops.map(p => Math.sqrt(p.n)), tot = wts.reduce((a, b) => a + b, 0);
+  const minH = 16, avail = H - pops.length * 2 - minH * pops.length;
+  let y = 0; rasterLayout = [];
+  for (const [k, p] of pops.entries()) { const h = minH + avail * wts[k] / tot; rasterLayout.push({p, y, h}); y += h + 2; }
+  for (const w of S.windows) if (w.stop > t0 && w.start < t1) { g.fillStyle = css(w.kind === "fwd" ? "--fwd" : "--rev"); g.fillRect(x(Math.max(w.start, t0)), 0, x(Math.min(w.stop, t1)) - x(Math.max(w.start, t0)), H); }
+  if (t1 > S.sleep_end) { g.fillStyle = css("--rest"); g.fillRect(x(Math.max(S.sleep_end, t0)), 0, W, H); }
+  let shown = 0;
+  for (const {p, y, h} of rasterLayout) {
+    const d = rasterData[p.name]; const col = popColor(p.name);
+    g.fillStyle = highlightPop === p.name ? css("--hi") : css("--line"); g.fillRect(0, y, L - 6, h);
+    g.fillStyle = css("--ink"); g.font = "11px system-ui"; g.textBaseline = "middle";
+    g.fillText(label(p.name), 4, y + h / 2);
+    g.fillStyle = col; g.globalAlpha = 0.85;
+    const r = h / p.n < 1.2 ? 1.2 : Math.min(2.5, h / p.n);
+    for (let k = 0; k < d.t.length; k++) {
+      const t = d.t[k]; if (t < t0 || t > t1) continue;
+      g.fillRect(x(t) - r / 2, y + (d.i[k] + 0.5) / p.n * h - r / 2, r, r); shown++;
+    }
+    g.globalAlpha = 1;
+    // CA3 SUP: mark the 10 sequence groups (group 1 at the top of the band).
+    if (p.name === "ca3_sup" && S.replay.length) {
+      const G = S.replay[0].heat.length;
+      g.strokeStyle = css("--muted"); g.globalAlpha = 0.5; g.lineWidth = 0.5;
+      for (let k = 1; k < G; k++) { const yy = y + k / G * h; g.beginPath(); g.moveTo(L, yy); g.lineTo(W, yy); g.stroke(); }
+      g.globalAlpha = 1; g.fillStyle = css("--muted"); g.font = "9px system-ui";
+      g.fillText("g1", L - 16, y + 0.5 / G * h); g.fillText("g" + G, L - 20, y + (G - 0.5) / G * h);
+    }
+  }
+  g.fillStyle = css("--hi");
+  g.fillRect(x(T) - 0.5, 0, 1, H);
+  if (selected && selected.focus != null && selected.focus >= t0 && selected.focus <= t1) {
+    const lay = rasterLayout.find(l => l.p.name === selected.pop);
+    const yy = lay.y + (selected.idx + 0.5) / lay.p.n * lay.h;
+    g.strokeStyle = css("--hi"); g.lineWidth = 2; g.beginPath(); g.arc(x(selected.focus), yy, 6, 0, 7); g.stroke();
+    for (const c of (selected.causes || [])) {
+      const cl = rasterLayout.find(l => l.p.name === c.pop); if (!cl || c.t < t0) continue;
+      const cy = cl.y + (c.idx + 0.5) / cl.p.n * cl.h;
+      g.strokeStyle = c.w > 0 ? css("--exc") : css("--inh"); g.globalAlpha = 0.5; g.lineWidth = 1;
+      g.beginPath(); g.moveTo(x(c.t), cy); g.lineTo(x(selected.focus), yy); g.stroke(); g.globalAlpha = 1;
+    }
+  }
+  $("rasterInfo").textContent = `${(t0).toFixed(0)}–${(t1).toFixed(0)} ms · ${shown.toLocaleString()} spikes · ${phaseAt(T)}`;
+}
+$("raster").addEventListener("click", e => {
+  if (!rasterData || !rasterLayout) return;
+  const r = e.target.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top, W = r.width, L = 92;
+  const win = +$("winSel").value, t0 = T - win / 2, tx = t0 + (mx - L) / (W - L - 6) * win;
+  const lay = rasterLayout.find(l => my >= l.y && my <= l.y + l.h); if (!lay) return;
+  const d = rasterData[lay.p.name]; let best = -1, bd = 1e9;
+  for (let k = 0; k < d.t.length; k++) {
+    const dx = (d.t[k] - tx) / win * (W - L), dy = lay.y + (d.i[k] + 0.5) / lay.p.n * lay.h - my;
+    const dist = dx * dx + dy * dy; if (dist < bd) { bd = dist; best = k; }
+  }
+  if (best < 0 || bd > 400) return;
+  openNeuron(lay.p.name, d.i[best], d.t[best]);
+});
+
+// ------------------------------------------------------------------ neuron inspector
+async function openNeuron(pop, idx, t) {
+  $("neuron").classList.remove("empty");
+  $("neuron").innerHTML = '<div class="empty">Loading…</div>';
+  const n = await api(`/api/neuron?run=${encodeURIComponent(S.name)}&pop=${pop}&idx=${idx}&t=${t ?? ""}`);
+  selected = {pop, idx, focus: n.focus_spike, causes: n.causes};
+  if (n.focus_spike != null && Math.abs(n.focus_spike - T) > +$("winSel").value / 2) setTime(n.focus_spike); else drawRaster();
+  const P = POP[pop] || {label: pop, role: ""};
+  const p = S.pops.find(q => q.name === pop);
+  let h = `<p><b style="font-size:16px">${P.label} neuron #${idx}</b> <span class="pill">${n.spikes.length} spikes · ${(n.spikes.length / (S.t_max / 1000)).toFixed(1)} Hz</span></p>
+    <p class="hint">${P.role}</p><canvas id="nTrain" height="40"></canvas>
+    <p class="hint">Its spikes over the whole run (tick = 1 spike). Click the strip to pick a spike near that time.</p>`;
+  if (!n.wired) { $("neuron").innerHTML = h + '<p class="hint">Wiring not exported for this run, so causes and partners are unknown. Run: <code>.venv/bin/python viewer/export_wiring.py out/' + S.name + '.h5</code></p>'; drawTrain(n); return; }
+  const tbl = (rows, head) => `<table><tr><th>${head}</th><th>synapses</th><th>mean weight</th></tr>${rows.map(r => `<tr><td><i class="sw" style="background:${popColor(r.pop)}"></i>${label(r.pop)}</td><td>${r.count}</td><td style="color:${r.mean_w < 0 ? "var(--inh)" : "inherit"}">${r.mean_w}</td></tr>`).join("")}</table>`;
+  h += `<div class="two"><div><h3 style="font-size:14px;margin:6px 0">It listens to (inputs)</h3>${tbl(n.in_by_pop, "from")}</div>
+        <div><h3 style="font-size:14px;margin:6px 0">It talks to (outputs)</h3>${tbl(n.out_by_pop, "to")}</div></div>`;
+  if (n.focus_spike != null) {
+    const pct = n.drive_exc ? Math.round(100 * n.drive_exc / (n.drive_exc - n.drive_inh)) : 0;
+    h += `<h3 style="font-size:14px;margin:14px 0 4px">Why did it fire at ${n.focus_spike} ms?</h3>
+      <p class="hint" style="margin:0 0 6px">${n.n_causes} input spikes from ${n.n_cause_cells} neurons arrived in the 5 ms before (${phaseAt(n.focus_spike)}).
+      Total push: <b style="color:var(--exc)">+${n.drive_exc}</b> excitatory, <b style="color:var(--inh)">${n.drive_inh}</b> inhibitory (weights in mV jumps).
+      After this spike, <b>${n.n_effects}</b> of its ${n.n_out} targets fired within 5 ms of receiving it.</p>
+      <p class="hint" style="margin:0 0 6px">Caveats: (1) external drive (the stimulus generators that start replay and the background noise) is not recorded,
+      so it is missing here. If the push above looks too small to cause a spike, external drive did the rest.
+      (2) "Fired right after" means timing only: in a burst, many targets fire anyway.</p>
+      <svg id="ego" viewBox="0 0 900 300" style="width:100%;height:auto"></svg>
+      <div class="two"><div><h3 style="font-size:13px;margin:6px 0">Strongest excitatory causes (click to follow)</h3>${causeTable(n.causes.filter(c => c.w > 0), "arrived")}
+        <h3 style="font-size:13px;margin:10px 0 6px">Strongest inhibitory causes</h3>${causeTable(n.causes.filter(c => c.w < 0), "arrived")}</div>
+      <div><h3 style="font-size:13px;margin:6px 0">Targets that fired right after (click to follow)</h3>${causeTable(n.effects, "fired")}</div></div>`;
+  } else h += '<p class="hint">This neuron never fired in this run.</p>';
+  $("neuron").innerHTML = h;
+  drawTrain(n);
+  if (n.focus_spike != null) drawEgo(n);
+  $("neuron").querySelectorAll("[data-go]").forEach(a => a.addEventListener("click", () => { const [pp, ii, tt] = a.dataset.go.split("|"); openNeuron(pp, +ii, +tt); }));
+}
+function causeTable(rows, tcol) {
+  if (!rows.length) return '<p class="hint">none</p>';
+  return `<table><tr><th>neuron</th><th>${tcol} (ms)</th><th>weight</th></tr>${rows.slice(0, 12).map(c =>
+    `<tr><td><span class="link" data-go="${c.pop}|${c.idx}|${c.t}"><i class="sw" style="background:${popColor(c.pop)}"></i>${label(c.pop)} #${c.idx}</span></td><td>${c.arrive ?? c.t}</td><td style="color:${c.w < 0 ? "var(--inh)" : "var(--exc)"}">${c.w}</td></tr>`).join("")}</table>`;
+}
+function drawTrain(n) {
+  const cv = $("nTrain"), dpr = devicePixelRatio || 1, W = cv.clientWidth, H = 40;
+  cv.width = W * dpr; cv.height = H * dpr; const g = cv.getContext("2d"); g.scale(dpr, dpr);
+  const x = t => t / S.t_max * W;
+  for (const w of S.windows) { g.fillStyle = css(w.kind === "fwd" ? "--fwd" : "--rev"); g.fillRect(x(w.start), 0, Math.max(2, x(w.stop) - x(w.start)), H); }
+  g.fillStyle = popColor(n.pop); for (const t of n.spikes) g.fillRect(x(t), 6, 1, H - 12);
+  if (n.focus_spike != null) { g.fillStyle = css("--hi"); g.fillRect(x(n.focus_spike) - 1.5, 0, 3, H); }
+  cv.onclick = e => { const r = cv.getBoundingClientRect(); openNeuron(n.pop, n.idx, (e.clientX - r.left) / r.width * S.t_max); };
+}
+function drawEgo(n) {
+  const svg = $("ego"), ns = "http://www.w3.org/2000/svg", mk = (t, a) => { const e = document.createElementNS(ns, t); for (const k in a) e.setAttribute(k, a[k]); svg.appendChild(e); return e; };
+  const cx = 450, cy = 150;
+  const side = (list, x0, dir) => {
+    const L = list.slice(0, 24), maxW = Math.max(...L.map(c => Math.abs(c.w)), 1e-6);
+    L.forEach((c, k) => {
+      const y = 20 + (k + 0.5) * 260 / L.length, x = x0;
+      const col = c.w < 0 ? css("--inh") : css("--exc");
+      const a = dir < 0 ? [x + 8, y, cx - 22, cy] : [cx + 22, cy, x - 8, y];
+      mk("line", {x1: a[0], y1: a[1], x2: a[2], y2: a[3], stroke: col, "stroke-width": 0.5 + 3 * Math.abs(c.w) / maxW, "stroke-opacity": 0.55});
+      const d = mk("circle", {cx: x, cy: y, r: 6, fill: popColor(c.pop), style: "cursor:pointer"});
+      d.addEventListener("click", () => openNeuron(c.pop, c.idx, c.t));
+      d.addEventListener("mousemove", e => tip(e, `${label(c.pop)} #${c.idx}<br>${dir < 0 ? `${c.n} spike(s) arrived from` : "fired at"} ${c.arrive ?? c.t} ms · total weight ${c.w}`)); d.addEventListener("mouseleave", untip);
+      mk("text", {x: x + (dir < 0 ? -10 : 10), y: y + 4, "text-anchor": dir < 0 ? "end" : "start"}).textContent = `${label(c.pop)} #${c.idx}`;
+    });
+  };
+  // Show both kinds of input: the 14 strongest excitatory and the 10 strongest inhibitory senders.
+  side([...n.causes.filter(c => c.w > 0).slice(0, 14), ...n.causes.filter(c => c.w < 0).slice(0, 10)], 190, -1);
+  side(n.effects, 710, 1);
+  mk("circle", {cx, cy, r: 20, fill: popColor(n.pop), stroke: css("--hi"), "stroke-width": 3});
+  mk("text", {x: cx, y: cy + 38, "text-anchor": "middle", style: "font-weight:600"}).textContent = `${label(n.pop)} #${n.idx}`;
+  mk("text", {x: cx, y: cy + 52, "text-anchor": "middle", style: "fill:var(--muted)"}).textContent = `fired at ${n.focus_spike} ms`;
+  mk("text", {x: 190, y: 12, "text-anchor": "middle", style: "fill:var(--muted)"}).textContent = "inputs that arrived just before";
+  mk("text", {x: 710, y: 12, "text-anchor": "middle", style: "fill:var(--muted)"}).textContent = "targets that fired just after";
+}
+
+// ------------------------------------------------------------------ tooltip
+function tip(e, html) { const t = $("tip"); t.innerHTML = html; t.style.display = "block"; t.style.left = Math.min(e.clientX + 14, innerWidth - 330) + "px"; t.style.top = (e.clientY + 14) + "px"; }
+function untip() { $("tip").style.display = "none"; }
+
+// ------------------------------------------------------------------ new run
+function estimate() {
+  const f = new FormData($("newForm")), s = +f.get("scale"), b = +f.get("n_swr"), full = f.get("preset") === "full-loop";
+  // Measured on an Apple M4, 8 threads, 1%: full loop = 15 s build + 37 s per block + ~50 s recall test.
+  // Other scales and the fast preset are not measured; time is assumed to grow with scale.
+  const sec = full ? (15 + 37 * b + 50) * s : (10 + 15 * b) * s;
+  const min = Math.max(1, Math.round(sec / 60));
+  const guess = s > 1 || !full ? " (a guess: not measured for this choice yet)" : "";
+  $("estimate").textContent = `Rough time: about ${min} min${guess}. Then about ${s} min to export the wiring.`;
+}
+$("newBtn").addEventListener("click", () => { $("newForm").name.value = "run" + (runsCache.length + 1) + "_1pct"; $("launchErr").textContent = ""; estimate(); $("newDlg").showModal(); });
+$("newForm").addEventListener("input", estimate);
+$("newForm").addEventListener("submit", async e => {
+  if (e.submitter && e.submitter.value === "cancel") return;
+  e.preventDefault();
+  const body = Object.fromEntries(new FormData($("newForm")));
+  try {
+    await api("/api/launch", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+    $("newDlg").close(); await refreshRuns(body.name); $("runSel").value = body.name; loadRun();
+  } catch (err) { $("launchErr").textContent = err.message; }
+});
+
+// ------------------------------------------------------------------ boot
+$("glossary").innerHTML = TERMS.map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join("")
+  + Object.values(POP).map(p => `<dt>${p.label}</dt><dd>${p.role}</dd>`).join("");
+$("runSel").addEventListener("change", loadRun);
+addEventListener("resize", () => { if (S) { drawTimeline(); drawRaster(); drawReplay(); } });
+loadRun().catch(e => { $("cards").innerHTML = `<div class="empty">${e.message}</div>`; });
+</script>
+</body>
+</html>
