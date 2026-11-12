@@ -29,12 +29,28 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
 import reconstruct_connectivity as rc  # noqa: E402
 
-# HDF5 group -> key in replay_scaled's `net` dict, used to check that the
-# rebuilt network has the same node IDs as the original run.
 CHUNK = 1_000_000  # connections read per slice
 
-NET_KEYS = {"ca3_sup": "CA3_SUP", "ca3_deep": "CA3_DEEP", "ca1_pyr": "PYR",
-            "ca1_basket": "BASKET", "ca1_olm": "OLM"}
+# HDF5 group -> where save_replay_hdf5() takes that population from:
+# (variable in the replay_scaled namespace, then key in `net` or attribute).
+POP_SOURCES = {
+    "ca3_sup": ("net", "CA3_SUP"), "ca3_deep": ("net", "CA3_DEEP"),
+    "ca3_int_sup": ("net", "CA3_INT_SUP"), "ca3_int_deep": ("net", "CA3_INT_DEEP"),
+    "ca1_pyr": ("net", "PYR"), "ca1_basket": ("net", "BASKET"), "ca1_olm": ("net", "OLM"),
+    "ec_lii": ("ec_module", "population"), "ec_lv": ("eclv_module", "population"),
+    "mpfc": ("mpfc_module", "population"), "mpfc_int": ("mpfc_module", "INT"),
+    "dg_gc": ("dg_module", "GC"), "dg_mc_low": ("dg_module", "MC_LOW"),
+    "dg_mc_high": ("dg_module", "MC_HIGH"), "dg_basket": ("dg_module", "BASKET"),
+}
+
+
+def rebuilt_population(ns, name):
+    """The rebuilt NodeCollection for one HDF5 group, or None if unknown."""
+    var, key = POP_SOURCES.get(name, (None, None))
+    obj = ns.get(var)
+    if obj is None:
+        return None
+    return obj.get(key) if isinstance(obj, dict) else getattr(obj, key, None)
 
 
 def main():
@@ -66,11 +82,19 @@ def main():
     _, ns = rc.build_network(flags)
     import nest
 
-    net = ns.get("net") or {}
-    for name, gid_first, _ in pops:
-        key = NET_KEYS.get(name)
-        if key in net and int(net[key].tolist()[0]) != gid_first:
-            sys.exit(f"!!! node IDs differ for {name}: the rebuild does not match the run. "
+    # Every population in the run file must exist in the rebuild with the
+    # same first node ID and size; otherwise locate() below would label
+    # synapses as the wrong cells.
+    if not isinstance(ns.get("net"), dict):
+        sys.exit("!!! the rebuild has no network to check (pattern-completion runs are not supported).")
+    for name, gid_first, n in pops:
+        nc = rebuilt_population(ns, name)
+        if nc is None:
+            sys.exit(f"!!! population {name} is in the run but not in the rebuild. "
+                     "Use the exact flags of the original run.")
+        ids = nc.tolist()
+        if int(ids[0]) != gid_first or len(ids) != n:
+            sys.exit(f"!!! node IDs differ for {name} (run: {gid_first}+{n}, rebuild: {ids[0]}+{len(ids)}). "
                      "Use the exact flags and --threads of the original run.")
 
     # One kernel scan (each GetConnections call scans every synapse, ~20 s at

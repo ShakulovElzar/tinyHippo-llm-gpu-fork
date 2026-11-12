@@ -249,3 +249,33 @@ Cost:
   for the GPU. Better there: fill the trains one epoch at a time. This needs `SetStatus` of
   `spike_times` after `Simulate`, which Phase 0 must test on NEST GPU.
 - 6 runs in parallel took 25–30 min each, about 10× slower than one run alone. Run fewer at a time.
+
+### 6. Code review fixes (branch `shim`)
+
+A code review found 10 problems. All 10 are fixed. The model's spikes and wiring do not change.
+
+| # | file | problem | fix |
+|---|---|---|---|
+| 1 | `replay_scaled.py` | MPI: EC LV / mPFC spikes were gathered after ranks > 0 returned, so rank 0 waited forever | gather them before the return |
+| 2 | `replay_scaled.py`, `decode_identity.py` | the HDF5 had no pattern schedule; the decoder assumed 0,1,2,0,… | new root attrs `epoch_pattern`, `n_epochs`, `n_patterns`, `epoch_ms`; decoder uses them and warns on old files |
+| 3 | `decode_identity.py` | `--n-blocks` fixed at 14 (crash for other `--n-swr`) | defaults come from the file |
+| 4 | `run.sh` | output name left out flags that change results (N_PATTERNS, HET_WCOMP, DELAY_JITTER, …) | tag every non-default value; default names are unchanged |
+| 5 | `run.sh`, `replay_scaled.py` | pattern-completion mode ignored `--seed` | `--seed` is passed and used; name gets `_s<seed>` |
+| 6 | `tiny.py` | missing `sinusoidal_poisson_generator` silently ran without theta / with a flat ripple | raise `RuntimeError` that names `--rhythm-gen spike_generator` |
+| 7 | `replay_scaled.py` | spike_generator run past its horizon only printed a warning | HDF5 attr `rhythm_truncated` |
+| 8 | `viewer/app.py` | ripple windows from `--n-swr` even without `--stc` | use the file's `n_epochs`/`epoch_ms`; without `--stc`, one epoch |
+| 9 | `viewer/export_wiring.py` | node-ID check covered only CA3/CA1 | check first ID and size of every population; stop if one is missing |
+| 10 | `viewer/app.py` | `run` parameter not checked; any web page could POST a launch | run names must be plain names; POST needs JSON + local Host/Origin; GET needs local Host |
+
+Checks:
+- Reference config, 1 thread: `--diff` against `s0_ref_t1.h5` lists only the 4 new attrs.
+  **New S0 reference digest: `8631eb295f551caa64c316de052ca3f1235d194f8f80fd895a16c63dec472607`** (`out/s0_fix.h5`).
+- Config C without `--seed`: identical to `cfgC_shim.h5`. With `--seed 303`: different, so the seed now works.
+  The old config C digest (`05cc4b75…`) was made with `--seed 202` ignored; with the seed it now changes.
+- Wiring export: equal to `s0_after_shim_wiring.h5`; with a wrong `--dg-scale` it stops with an error.
+- Viewer: cross-site text/plain POST → 403, wrong Host → 403, `../` run name → 400.
+- Generator: a missing device raises `RuntimeError`. A spike_generator run past its horizon gets `rhythm_truncated=True`.
+- `run.sh` dry runs: N_PATTERNS=2 and 3 now give different names; pattern completion passes `--seed`.
+
+Not tested: a real MPI run (no MPI here). Not fixed: `pattern_recall_specificity` (G2) and the
+DG summary stats still read only local recorder events under MPI.

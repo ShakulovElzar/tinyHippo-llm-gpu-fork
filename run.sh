@@ -534,12 +534,17 @@ mkdir -p "$OUTDIR"
 # STC / EC / homeostasis, and exits after writing its own HDF5. Runs on the
 # same node config; it is lighter than the full consolidation run.
 if [ "$PATTERN_COMPLETION" = "1" ]; then
-  PC_OUT="${OUTDIR}/pattern_completion_${SCALE}pct.h5"
+  # SEED is passed and tagged, so seed replicates do not overwrite each other.
+  PC_SEED_FLAG=""
+  PC_TAG=""
+  [ -n "$SEED" ] && PC_SEED_FLAG="--seed $SEED" && PC_TAG="_s${SEED}"
+  PC_OUT="${OUTDIR}/pattern_completion_${SCALE}pct${PC_TAG}.h5"
   echo "[Slurm] PATTERN COMPLETION mode → $PC_OUT"
   srun --cpu-bind=cores \
     python3 -u "replay_scaled.py" \
       --scale             "$SCALE" \
       --threads           "$SLURM_CPUS_PER_TASK" \
+      $PC_SEED_FLAG \
       --pattern-completion \
       --pc-cue-fracs      "$PC_CUE_FRACS" \
       --pc-cue-weight     "$PC_CUE_WEIGHT" \
@@ -589,6 +594,39 @@ fi
 [ -n "$EC_CA3_W" ]                && PHASE_TAG="${PHASE_TAG}_eca3w${EC_CA3_W}"
 [ -n "$EC_CA3_GROUP_FRAC" ]       && PHASE_TAG="${PHASE_TAG}_eca3grp${EC_CA3_GROUP_FRAC}"
 [ -n "$MF_GROUP_FRAC" ]           && PHASE_TAG="${PHASE_TAG}_mfgrp${MF_GROUP_FRAC}"
+# Tag every other flag that changes results, so two configs never write the
+# same file. Only non-default values are tagged: default names stay as before.
+# HET_WCOMP: untagged means 2.3, the value all H-series jobs use (see line ~122).
+[ "$N_PATTERNS" != "1" ]       && PHASE_TAG="${PHASE_TAG}_np${N_PATTERNS}"
+[ "$HET" != "0" ] && [ "$HET_WCOMP" != "2.3" ] && PHASE_TAG="${PHASE_TAG}_wc${HET_WCOMP}"
+[ "$DELAY_JITTER" != "0" ]     && PHASE_TAG="${PHASE_TAG}_dj${DELAY_JITTER}"
+[ -n "$PP_RESIDUAL" ]          && PHASE_TAG="${PHASE_TAG}_ppr${PP_RESIDUAL}"
+[ -n "$DG_DELAY_JITTER" ]      && PHASE_TAG="${PHASE_TAG}_dgdj${DG_DELAY_JITTER}"
+[ "$DG" = "1" ] && [ "$DG_SCALE" != "$SCALE" ] && PHASE_TAG="${PHASE_TAG}_dgs${DG_SCALE}"
+[ "$EPOCH_MS" != "1000" ]      && PHASE_TAG="${PHASE_TAG}_ep${EPOCH_MS}"
+[ "$EC_LII_K" != "50" ]        && PHASE_TAG="${PHASE_TAG}_eck${EC_LII_K}"
+[ "$NO_STC" = "1" ]            && PHASE_TAG="${PHASE_TAG}_nostc"
+[ "$PRP_THRESHOLD" != "14.0" ] && [ "${PRP_THRESHOLD%.*}" -le 100 ] 2>/dev/null && PHASE_TAG="${PHASE_TAG}_prp${PRP_THRESHOLD}"
+if [ "$CORTICAL_RECALL" = "1" ]; then
+  [ "$CR_CUE_FRAC" != "0.4" ]    && PHASE_TAG="${PHASE_TAG}_cue${CR_CUE_FRAC}"
+  [ "$CR_PRIME_RATE" != "120" ]  && PHASE_TAG="${PHASE_TAG}_prate${CR_PRIME_RATE}"
+  [ "$CR_PRIME_WEIGHT" != "1.0" ] && PHASE_TAG="${PHASE_TAG}_pw${CR_PRIME_WEIGHT}"
+  [ -n "$G2_TRIALS" ]            && PHASE_TAG="${PHASE_TAG}_g2t${G2_TRIALS}"
+  [ -n "$G2_ITI" ]               && PHASE_TAG="${PHASE_TAG}_g2iti${G2_ITI}"
+fi
+[ -n "$PLACE_FIELD_SIGMA" ]    && PHASE_TAG="${PHASE_TAG}_pfs${PLACE_FIELD_SIGMA}"
+[ -n "$EC_PATTERN_BASE_RATE" ] && PHASE_TAG="${PHASE_TAG}_ecb${EC_PATTERN_BASE_RATE}"
+[ -n "$EC_PATTERN_PEAK_RATE" ] && PHASE_TAG="${PHASE_TAG}_ecp${EC_PATTERN_PEAK_RATE}"
+[ -n "$EC_PATTERN_WEIGHT" ]    && PHASE_TAG="${PHASE_TAG}_ecw${EC_PATTERN_WEIGHT}"
+[ -n "$NEUROGENESIS_RATE" ]    && PHASE_TAG="${PHASE_TAG}_ngr${NEUROGENESIS_RATE}"
+[ -n "$NEUROGENESIS_MATURATION_EPOCHS" ] && PHASE_TAG="${PHASE_TAG}_ngm${NEUROGENESIS_MATURATION_EPOCHS}"
+[ -n "$NEUROGENESIS_YOUNG_IE" ]          && PHASE_TAG="${PHASE_TAG}_ngie${NEUROGENESIS_YOUNG_IE}"
+[ -n "$NEUROGENESIS_YOUNG_INHIB_SCALE" ] && PHASE_TAG="${PHASE_TAG}_ngis${NEUROGENESIS_YOUNG_INHIB_SCALE}"
+[ -n "$NEUROGENESIS_YOUNG_PP_SCALE" ]    && PHASE_TAG="${PHASE_TAG}_ngps${NEUROGENESIS_YOUNG_PP_SCALE}"
+[ -n "$DG_ASSOC_A" ]           && PHASE_TAG="${PHASE_TAG}_daa${DG_ASSOC_A}"
+[ -n "$DG_ASSOC_A_HETERO" ]    && PHASE_TAG="${PHASE_TAG}_dah${DG_ASSOC_A_HETERO}"
+[ -n "$DG_ASSOC_W_MAX" ]       && PHASE_TAG="${PHASE_TAG}_dawx${DG_ASSOC_W_MAX}"
+[ -n "$DG_ASSOC_W_MIN" ]       && PHASE_TAG="${PHASE_TAG}_dawn${DG_ASSOC_W_MIN}"
 [ "$N_SWR" != "14" ]           && PHASE_TAG="${PHASE_TAG}_swr${N_SWR}"   # default 14 untagged: older names unchanged
 [ -n "$SEED" ]               && PHASE_TAG="${PHASE_TAG}_s${SEED}"
 OUTFILE="${OUTDIR}/replay_${SCALE}pct_stc${PHASE_TAG}.h5"

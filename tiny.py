@@ -149,7 +149,7 @@ def maybe_make_theta_generators(n: int, rate_mean: float, rate_amp: float, freq_
     """Create N sinusoidally-modulated Poisson generators (if available in this NEST build).
 
     Returns:
-        NodeCollection of generators, or None if the model is unavailable.
+        NodeCollection of generators. Raises RuntimeError if the model is unavailable.
     """
     if _RHYTHM["mode"] == "spike_generator":
         return _sinusoidal_spike_generators(n, rate_mean, rate_amp, freq_hz, phase,
@@ -167,8 +167,11 @@ def maybe_make_theta_generators(n: int, rate_mean: float, rate_amp: float, freq_
         )
         return gens
     except Exception as e:
-        print(f"[theta] sinusoidal_poisson_generator not available ({e}); running without theta.")
-        return None
+        # Do not run on without theta: that changes the model with no trace in
+        # the output (NEST GPU has no such device).
+        raise RuntimeError(
+            f"sinusoidal_poisson_generator not available ({e}). "
+            "Use --rhythm-gen spike_generator for the same drive.") from e
 # ------------
 def make_swr_event_generators(
     n: int,
@@ -185,10 +188,10 @@ def make_swr_event_generators(
     We model SWR as:
       1) a 'sharp wave' (slow depolarizing) drive: Poisson at sharpwave_rate between start/stop
       2) a 'ripple' drive: ideally sinusoidally-modulated Poisson at ripple_hz between start/stop
-         (falls back to plain Poisson if sinusoidal_poisson_generator is unavailable).
+         (raises RuntimeError if sinusoidal_poisson_generator is unavailable).
 
     Returns:
-        (sharp_gen, ripple_gen) NodeCollections, each of size n (or ripple_gen may be None).
+        (sharp_gen, ripple_gen) NodeCollections, each of size n.
     """
     sharp = sim.Create(
         "poisson_generator",
@@ -216,13 +219,11 @@ def make_swr_event_generators(
             },
         )
     except Exception as e:
-        # Fallback: constant high-rate Poisson during the ripple window
-        print(f"[swr] sinusoidal_poisson_generator not available ({e}); using poisson_generator for ripple.")
-        ripple = sim.Create(
-            "poisson_generator",
-            int(n),
-            params={"rate": float(ripple_rate_mean), "start": float(start_ms), "stop": float(stop_ms)},
-        )
+        # Do not fall back to a flat Poisson ripple: that changes the model
+        # with no trace in the output.
+        raise RuntimeError(
+            f"sinusoidal_poisson_generator not available ({e}). "
+            "Use --rhythm-gen spike_generator for the same drive.") from e
     return sharp, ripple
 # -----------
 # Build CA1 microcircuit

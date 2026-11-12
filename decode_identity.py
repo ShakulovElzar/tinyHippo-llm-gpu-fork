@@ -86,17 +86,33 @@ def perm_p(stat_fn, sched, rng, n_perm):
 
 
 def schedule(f, n_blocks, n_pat):
-    """Pattern per block. Uses the file's record when present, else cyclic."""
+    """Pattern per block. Uses the file's record when present, else cyclic.
+
+    Files written before replay_scaled.py saved `epoch_pattern` get the cyclic
+    guess, which is wrong for --train-pattern and --novel-pattern-onset runs.
+    """
     if "epoch_pattern" in f.attrs:
-        return np.asarray(f.attrs["epoch_pattern"])[:n_blocks]
+        sched = np.asarray(f.attrs["epoch_pattern"])
+        if len(sched) < n_blocks:
+            raise SystemExit(f"{f.filename}: file has {len(sched)} epochs, --n-blocks is {n_blocks}")
+        return sched[:n_blocks]
+    print("   WARNING no epoch_pattern in file: assuming cyclic schedule "
+          "(wrong for --train-pattern / --novel-pattern-onset runs)")
     return np.array([e % n_pat for e in range(n_blocks)])
 
 
 def analyse(path, gid_override, n_blocks, n_pat, n_perm, seed):
     rng = np.random.default_rng(seed)
     f = h5py.File(path, "r")
+    # Defaults come from the file (written by replay_scaled.py since the
+    # schedule attrs exist); older files fall back to 14 blocks, 3 patterns.
+    if n_blocks is None:
+        n_blocks = int(f.attrs.get("n_epochs", 14))
+    if n_pat is None:
+        n_pat = int(f.attrs.get("n_patterns", 3))
+    epoch_ms = float(f.attrs.get("epoch_ms", 1000.0))
+    print(f"== {path}  ({n_blocks} blocks, {n_pat} patterns, epoch {epoch_ms:.0f} ms)")
     sched = schedule(f, n_blocks, n_pat)
-    print(f"== {path}")
     pops = {}
     for key in sorted(set(HOME_POPS + DECODE_POPS + ["ca3_sup"])):
         if key not in f:
@@ -111,7 +127,7 @@ def analyse(path, gid_override, n_blocks, n_pat, n_perm, seed):
             g0, src = int(f["ca3_sup/group_ids"][:].min()), "group_ids"
         else:
             g0, src = int(s.min()), "lowest spiking GID (UNRELIABLE)"
-        X, n_out = binned(f[f"{key}/spk_times"][:], s, g0, n, n_blocks)
+        X, n_out = binned(f[f"{key}/spk_times"][:], s, g0, n, n_blocks, epoch_ms)
         pops[key] = X
         warn = f"  WARNING {n_out} spikes outside range" if n_out else ""
         print(f"   {key:8s} n={n:6d} gid_first={g0} [{src}]{warn}")
@@ -152,8 +168,10 @@ def main():
     ap.add_argument("h5", nargs="+")
     ap.add_argument("--gid-first", action="append", default=[], metavar="POP=GID",
                     help="override a population's first GID, e.g. ec_lii=1097544")
-    ap.add_argument("--n-blocks", type=int, default=14)
-    ap.add_argument("--n-patterns", type=int, default=3)
+    ap.add_argument("--n-blocks", type=int, default=None,
+                    help="SWR blocks to score (default: n_epochs from the file, else 14)")
+    ap.add_argument("--n-patterns", type=int, default=None,
+                    help="default: n_patterns from the file, else 3")
     ap.add_argument("--n-perm", type=int, default=2000)
     ap.add_argument("--seed", type=int, default=0)
     a = ap.parse_args()

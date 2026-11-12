@@ -112,9 +112,14 @@ class Run:
             pops.append({**p, "n_spikes": int(len(t)), "active_frac": active / max(p["n"], 1),
                          "mean_rate": len(t) / (p["n"] * self.t_max / 1000.0),
                          "rate": np.round(rate, 2).tolist()})
-        epoch_ms = float(_flag(self.flags, "--epoch-ms", 1000.0))
-        n_swr = int(_flag(self.flags, "--n-swr", 1))
         a = self.attrs
+        if "n_epochs" in a and "epoch_ms" in a:          # written by replay_scaled.py
+            n_swr, epoch_ms = int(a["n_epochs"]), float(a["epoch_ms"])
+        elif "--stc" in self.flags:                      # --n-swr/--epoch-ms apply only with --stc
+            n_swr = int(_flag(self.flags, "--n-swr", 1))
+            epoch_ms = float(_flag(self.flags, "--epoch-ms", 1000.0))
+        else:                                            # one epoch of --sim-ms
+            n_swr, epoch_ms = 1, float(a.get("sim_ms", self.t_max))
         windows = []
         for e in range(n_swr):
             for kind in ("fwd", "rev"):
@@ -308,7 +313,18 @@ def _log_metrics(name):
     return [ln.strip() for ln in _log_lines(name) if _METRIC.search(ln) and len(ln) < 220][-80:]
 
 
+_RUN_NAME = re.compile(r"[A-Za-z0-9_.-]{1,80}")
+
+
+def _check_name(name):
+    """Run names are plain file names inside out/ (no '/', no '..')."""
+    if not _RUN_NAME.fullmatch(name) or name.startswith("."):
+        raise ValueError(f"bad run name {name!r}")
+    return name
+
+
 def get_run(name):
+    _check_name(name)
     path = os.path.join(OUT, name + ".h5")
     with _LOCK:
         r = _CACHE.get(name)
@@ -376,7 +392,7 @@ def launch(body):
 
 
 def log_tail(name, n=60):
-    return _log_lines(name)[-n:]
+    return _log_lines(_check_name(name))[-n:]
 
 
 # --------------------------------------------------------------------------- http
@@ -394,6 +410,8 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_GET(self):
+        if (self.headers.get("Host") or "").rsplit(":", 1)[0] not in ("127.0.0.1", "localhost"):
+            return self._send(403, {"error": "forbidden host"})
         u = urlparse(self.path)
         q = {k: v[0] for k, v in parse_qs(u.query).items()}
         try:
@@ -416,7 +434,17 @@ class Handler(BaseHTTPRequestHandler):
         except (KeyError, ValueError, FileNotFoundError, OSError) as e:
             self._send(400, {"error": f"{type(e).__name__}: {e}"})
 
+    def _local_request(self):
+        host = (self.headers.get("Host") or "").rsplit(":", 1)[0]
+        origin = self.headers.get("Origin")
+        ok_hosts = ("127.0.0.1", "localhost")
+        return (host in ok_hosts
+                and (origin is None or urlparse(origin).hostname in ok_hosts)
+                and (self.headers.get("Content-Type") or "").split(";")[0].strip() == "application/json")
+
     def do_POST(self):
+        if not self._local_request():
+            return self._send(403, {"error": "forbidden: POST only from the viewer page"})
         try:
             n = int(self.headers.get("Content-Length", 0))
             body = json.loads(self.rfile.read(n) or b"{}")

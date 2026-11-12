@@ -2524,7 +2524,7 @@ def run_pattern_completion(cfg, n_threads, cue_fracs,
                            ablate=False, cue_rate=2600.0, cue_weight=2.5,
                            cue_dur_ms=16.0, win_ms=60.0, gap_ms=150.0,
                            prime_rate=250.0, w_sup_local=3.0, w_ca3_ie_sup=-0.5,
-                           seed=42):
+                           seed=42, master_seed=None):
     """Auto-association probe: partial cue -> recurrent completion of a group.
 
     Builds a CA3 with the between-group sequence chain OFF (so no replay
@@ -2580,6 +2580,9 @@ def run_pattern_completion(cfg, n_threads, cue_fracs,
         rate_ec_ca3_sup=0.0, rate_ec_ca3_deep=0.0,
         rate_ca3_drive_sup=prime_rate, rate_ca3_drive_deep=0.0,
         rate_drive_ca3_int_sup=0.0, rate_drive_ca3_int_deep=0.0,
+        # --seed: same kernel/connection seeding as the main run
+        **({} if master_seed is None else
+           dict(master_seed=master_seed, seed_connect=master_seed)),
     )
 
     rng    = np.random.default_rng(seed)
@@ -4594,7 +4597,15 @@ def save_replay_hdf5(net, sim_ms, scale_label, outpath, bin_ms=10.0,
             ("dg_basket",  dg_module.spk_basket),
         ]:
             spk_cache[cache_key] = _gather_spikes(*_get_spikes(spk_rec))
-    # Phase 3 spike gathering handled inline (modules may be None)
+
+    # Phase 3 (EC LV, mPFC). Gather here, before ranks > 0 return: the gather
+    # is collective, so a gather after the return makes rank 0 wait forever.
+    if eclv_module is not None:
+        spk_cache["ec_lv"] = _gather_spikes(*_get_spikes(eclv_module.spike_rec))
+    if mpfc_module is not None:
+        spk_cache["mpfc"] = _gather_spikes(*_get_spikes(mpfc_module.spike_rec))
+        if getattr(mpfc_module, "INT", None) is not None:
+            spk_cache["mpfc_int"] = _gather_spikes(*_get_spikes(mpfc_module.spk_int))
 
     # Only rank 0 writes the file — all other ranks are done here.
     if _mpi_rank() != 0:
@@ -4613,6 +4624,14 @@ def save_replay_hdf5(net, sim_ms, scale_label, outpath, bin_ms=10.0,
         h5.attrs["swr_fwd_stop"]  = float(net["swr_fwd"][1])
         h5.attrs["swr_rev_start"] = float(net["swr_rev"][0])
         h5.attrs["swr_rev_stop"]  = float(net["swr_rev"][1])
+        # Sleep schedule: which pattern each SWR epoch replayed. Analysis
+        # scripts (decode_identity.py) need it: --train-pattern and
+        # --novel-pattern-onset make it non-cyclic.
+        h5.attrs["epoch_pattern"] = np.asarray(net["epoch_pattern"], dtype=np.int32)
+        h5.attrs["n_epochs"]      = int(len(net["epoch_pattern"]))
+        h5.attrs["n_patterns"]    = int(net["n_patterns"])
+        if net.get("epoch_ms") is not None:
+            h5.attrs["epoch_ms"]  = float(net["epoch_ms"])
         h5.attrs["ec_lii_present"] = ec_module is not None
         if ec_module is not None:
             h5.attrs["ec_lii_N"]       = ec_module.N
@@ -4627,6 +4646,10 @@ def save_replay_hdf5(net, sim_ms, scale_label, outpath, bin_ms=10.0,
             h5.attrs["rhythm_gen"]        = _ri["mode"]
             h5.attrs["rhythm_horizon_ms"] = float(_ri["horizon_ms"])
             h5.attrs["rhythm_n_spikes"]   = int(_ri["n_spikes"])
+            # True = the run went past the pre-computed theta trains, so the
+            # last part of the run had no theta drive.
+            h5.attrs["rhythm_truncated"]  = bool(
+                float(sim.GetKernelStatus("biological_time")) > _ri["horizon_ms"])
 
         h5.create_dataset("times_ms", data=times_ms)
 
@@ -4675,49 +4698,47 @@ def save_replay_hdf5(net, sim_ms, scale_label, outpath, bin_ms=10.0,
 
         # Phase 3: EC LV
         if eclv_module is not None:
-            t_lv, s_lv = _gather_spikes(*_get_spikes(eclv_module.spike_rec))
-            if _mpi_rank() == 0:
-                g_lv = h5.create_group("ec_lv")
-                g_lv.attrs["n_cells"]    = eclv_module.N
-                g_lv.attrs["gid_first"]  = int(eclv_module.population.tolist()[0])
-                g_lv.attrs["K_ca1_lv"]   = eclv_module.K_ca1_lv
-                g_lv.attrs["K_eclii_lv"] = eclv_module.K_eclii_lv
-                g_lv.attrs["w_init"]     = eclv_module.w_init
-                g_lv.create_dataset("spk_times",   data=t_lv.astype(np.float32), **compress)
-                g_lv.create_dataset("spk_senders", data=s_lv.astype(np.int32),   **compress)
-                counts_lv, _ = np.histogram(t_lv, bins=edges)
-                g_lv.create_dataset("rate",
-                    data=(counts_lv/(bin_ms/1e3)/max(eclv_module.N,1)).astype(np.float32))
-                h5.attrs["ec_lv_present"] = True
+            t_lv, s_lv = spk_cache["ec_lv"]
+            g_lv = h5.create_group("ec_lv")
+            g_lv.attrs["n_cells"]    = eclv_module.N
+            g_lv.attrs["gid_first"]  = int(eclv_module.population.tolist()[0])
+            g_lv.attrs["K_ca1_lv"]   = eclv_module.K_ca1_lv
+            g_lv.attrs["K_eclii_lv"] = eclv_module.K_eclii_lv
+            g_lv.attrs["w_init"]     = eclv_module.w_init
+            g_lv.create_dataset("spk_times",   data=t_lv.astype(np.float32), **compress)
+            g_lv.create_dataset("spk_senders", data=s_lv.astype(np.int32),   **compress)
+            counts_lv, _ = np.histogram(t_lv, bins=edges)
+            g_lv.create_dataset("rate",
+                data=(counts_lv/(bin_ms/1e3)/max(eclv_module.N,1)).astype(np.float32))
+            h5.attrs["ec_lv_present"] = True
 
         # Phase 3: mPFC
         if mpfc_module is not None:
-            t_pfc, s_pfc = _gather_spikes(*_get_spikes(mpfc_module.spike_rec))
-            if _mpi_rank() == 0:
-                g_pfc = h5.create_group("mpfc")
-                g_pfc.attrs["n_cells"]     = mpfc_module.N
-                g_pfc.attrs["gid_first"]   = int(mpfc_module.population.tolist()[0])
-                g_pfc.attrs["K_eclv_mpfc"] = mpfc_module.K_eclv_mpfc
-                g_pfc.attrs["w_init"]      = mpfc_module.w_init
-                g_pfc.create_dataset("spk_times",   data=t_pfc.astype(np.float32), **compress)
-                g_pfc.create_dataset("spk_senders", data=s_pfc.astype(np.int32),   **compress)
-                counts_pfc, _ = np.histogram(t_pfc, bins=edges)
-                g_pfc.create_dataset("rate",
-                    data=(counts_pfc/(bin_ms/1e3)/max(mpfc_module.N,1)).astype(np.float32))
-                h5.attrs["mpfc_present"] = True
-                # mPFC interneurons: without these the lateral-inhibition
-                # loop is invisible in the output, which is what made the
-                # 12% mPFC saturation hard to diagnose from the file alone.
-                if getattr(mpfc_module, "INT", None) is not None:
-                    t_i, s_i = _gather_spikes(*_get_spikes(mpfc_module.spk_int))
-                    g_i = h5.create_group("mpfc_int")
-                    g_i.attrs["n_cells"] = mpfc_module.N_int
-                    g_i.attrs["gid_first"] = int(mpfc_module.INT.tolist()[0])
-                    g_i.create_dataset("spk_times",   data=t_i.astype(np.float32), **compress)
-                    g_i.create_dataset("spk_senders", data=s_i.astype(np.int32),   **compress)
-                    c_i, _ = np.histogram(t_i, bins=edges)
-                    g_i.create_dataset("rate",
-                        data=(c_i/(bin_ms/1e3)/max(mpfc_module.N_int,1)).astype(np.float32))
+            t_pfc, s_pfc = spk_cache["mpfc"]
+            g_pfc = h5.create_group("mpfc")
+            g_pfc.attrs["n_cells"]     = mpfc_module.N
+            g_pfc.attrs["gid_first"]   = int(mpfc_module.population.tolist()[0])
+            g_pfc.attrs["K_eclv_mpfc"] = mpfc_module.K_eclv_mpfc
+            g_pfc.attrs["w_init"]      = mpfc_module.w_init
+            g_pfc.create_dataset("spk_times",   data=t_pfc.astype(np.float32), **compress)
+            g_pfc.create_dataset("spk_senders", data=s_pfc.astype(np.int32),   **compress)
+            counts_pfc, _ = np.histogram(t_pfc, bins=edges)
+            g_pfc.create_dataset("rate",
+                data=(counts_pfc/(bin_ms/1e3)/max(mpfc_module.N,1)).astype(np.float32))
+            h5.attrs["mpfc_present"] = True
+            # mPFC interneurons: without these the lateral-inhibition
+            # loop is invisible in the output, which is what made the
+            # 12% mPFC saturation hard to diagnose from the file alone.
+            if getattr(mpfc_module, "INT", None) is not None:
+                t_i, s_i = spk_cache["mpfc_int"]
+                g_i = h5.create_group("mpfc_int")
+                g_i.attrs["n_cells"] = mpfc_module.N_int
+                g_i.attrs["gid_first"] = int(mpfc_module.INT.tolist()[0])
+                g_i.create_dataset("spk_times",   data=t_i.astype(np.float32), **compress)
+                g_i.create_dataset("spk_senders", data=s_i.astype(np.int32),   **compress)
+                c_i, _ = np.histogram(t_i, bins=edges)
+                g_i.create_dataset("rate",
+                    data=(c_i/(bin_ms/1e3)/max(mpfc_module.N_int,1)).astype(np.float32))
 
         # --- Schaffer STDP weights -------------------------------------------
         # Exported so the CONSOLIDATED TRACE can be compared across runs: train
@@ -5547,10 +5568,14 @@ Dentate gyrus (Phase 6.2):
         print(f"{'='*72}")
         print(">>> Intact network (sup_local recurrence ON)...")
         intact = run_pattern_completion(cfg, n_threads, cue_fracs,
-                                        ablate=False, cue_weight=args.pc_cue_weight)
+                                        ablate=False, cue_weight=args.pc_cue_weight,
+                                        **({} if args.seed is None else
+                                           dict(seed=args.seed, master_seed=args.seed)))
         print(">>> Ablated control (sup_local = 0)...")
         ablated = run_pattern_completion(cfg, n_threads, cue_fracs,
-                                         ablate=True, cue_weight=args.pc_cue_weight)
+                                         ablate=True, cue_weight=args.pc_cue_weight,
+                                        **({} if args.seed is None else
+                                           dict(seed=args.seed, master_seed=args.seed)))
         print_pattern_completion(intact, ablated)
 
         if _HDF5_AVAILABLE and _mpi_rank() == 0:
@@ -6169,8 +6194,10 @@ Dentate gyrus (Phase 6.2):
               f"simulated to {_t_end:.0f} ms, horizon {_ri['horizon_ms']:.0f} ms")
         if _t_end > _ri["horizon_ms"]:
             print(f"!!! WARNING: theta drive stopped at {_ri['horizon_ms']:.0f} ms but the run "
-                  f"went to {_t_end:.0f} ms. Re-run with a larger --rhythm-horizon-ms.")
+                  f"went to {_t_end:.0f} ms. Re-run with a larger --rhythm-horizon-ms. "
+                  f"The HDF5 file gets rhythm_truncated=True.")
 
+    net["epoch_ms"] = SIM_MS   # length of one sleep epoch, for the HDF5 schedule attrs
     print(f"\n>>> [rank {rank}] Entering HDF5 export...")
     save_replay_hdf5(net, total_sim_ms, cfg["label"], hdf5_path,
                      ec_module=ec_module, stc_hook=stc_hook,
