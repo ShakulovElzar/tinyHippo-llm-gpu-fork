@@ -161,6 +161,8 @@ from tiny import (
     safe_set_seeds,
     maybe_make_theta_generators,
     make_swr_event_generators,
+    set_rhythm_generator,
+    rhythm_info,
 )
 
 
@@ -4620,6 +4622,11 @@ def save_replay_hdf5(net, sim_ms, scale_label, outpath, bin_ms=10.0,
             h5.attrs["nest_version"] = sim.version()
         except Exception:
             pass
+        _ri = rhythm_info()
+        if _ri["mode"] != "sinusoidal_poisson":   # default runs keep the old attrs exactly
+            h5.attrs["rhythm_gen"]        = _ri["mode"]
+            h5.attrs["rhythm_horizon_ms"] = float(_ri["horizon_ms"])
+            h5.attrs["rhythm_n_spikes"]   = int(_ri["n_spikes"])
 
         h5.create_dataset("times_ms", data=times_ms)
 
@@ -4976,6 +4983,17 @@ Dentate gyrus (Phase 6.2):
     parser.add_argument(
         "--backend", choices=sim.BACKENDS, default="nest",
         help="Simulator backend (simbackend.py). 'nest' = CPU NEST, the reference.")
+    parser.add_argument(
+        "--rhythm-gen", choices=["sinusoidal_poisson", "spike_generator"],
+        default="sinusoidal_poisson",
+        help="Device for theta and ripple drive. 'spike_generator' pre-computes the "
+             "same Poisson trains in numpy (NEST GPU has no sinusoidal_poisson_generator). "
+             "Not bit-identical to the default; compare across seeds.")
+    parser.add_argument(
+        "--rhythm-horizon-ms", type=float, default=None, metavar="MS",
+        help="With --rhythm-gen spike_generator: end time of the pre-computed theta "
+             "trains. Default: sleep epochs + homeostasis epochs + cortical recall "
+             "and G2 time + 1000 ms.")
     parser.add_argument(
         "--no-figures", action="store_true",
         help="Skip figure generation — recommended for scale>=12 on HPC")
@@ -5429,6 +5447,21 @@ Dentate gyrus (Phase 6.2):
             parser.error("--alpha-sweep requires --homeostasis")
     else:
         args.alpha_list = [args.homeo_alpha] if args.homeostasis else []
+
+    if args.rhythm_gen == "spike_generator":
+        _epoch_ms = args.epoch_ms if args.stc else args.sim_ms
+        # sleep epochs + homeostasis verification epochs + cortical recall
+        # (500 ms) and G2 trials, + 1000 ms margin. The end-of-run check
+        # warns if a run still goes past this.
+        _horizon = args.rhythm_horizon_ms or (
+            _epoch_ms * ((args.n_swr if args.stc else 1)
+                         + (len(args.alpha_list) if args.homeostasis else 0))
+            + ((500.0 + (args.n_patterns * args.g2_trials + 2) * args.g2_iti)
+               if args.cortical_recall else 0.0)
+            + 1000.0)
+        set_rhythm_generator("spike_generator", horizon_ms=_horizon,
+                             seed=(args.seed if args.seed is not None else 42) + 7301)
+        print(f">>> Rhythm drive: spike_generator, theta trains pre-computed to {_horizon:.0f} ms")
 
     if args.stc and not args.ec_lii:
         parser.error("--stc requires --ec-lii")
@@ -6128,6 +6161,15 @@ Dentate gyrus (Phase 6.2):
                  else os.path.join(out_dir, f"replay_{scale_tag}.h5"))
     if rank == 0:
         os.makedirs(os.path.dirname(os.path.abspath(hdf5_path)), exist_ok=True)
+
+    _ri = rhythm_info()
+    if _ri["mode"] == "spike_generator":
+        _t_end = float(sim.GetKernelStatus("biological_time"))
+        print(f">>> Rhythm drive: {_ri['n_spikes']:,} pre-computed spikes; "
+              f"simulated to {_t_end:.0f} ms, horizon {_ri['horizon_ms']:.0f} ms")
+        if _t_end > _ri["horizon_ms"]:
+            print(f"!!! WARNING: theta drive stopped at {_ri['horizon_ms']:.0f} ms but the run "
+                  f"went to {_t_end:.0f} ms. Re-run with a larger --rhythm-horizon-ms.")
 
     print(f"\n>>> [rank {rank}] Entering HDF5 export...")
     save_replay_hdf5(net, total_sim_ms, cfg["label"], hdf5_path,

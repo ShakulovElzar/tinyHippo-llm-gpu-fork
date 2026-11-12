@@ -150,7 +150,102 @@ Not covered (open items):
 - Other scripts still import NEST directly: `reconstruct_connectivity.py`,
   `bidirectional_replay*.py`, `nest_dg_ca3_fi_calibration.py`, `check_nest.py`. S0 covers only
   `replay_scaled.py` and `tiny.py`, as the plan says.
-- Only one config tested (the full-loop 1% reference). Flags that this config does not use
-  (e.g. `--homeostasis`, `--pattern-completion`) run code paths that no test covered.
+- ~~Only one config tested.~~ Closed in section 4.
 - Merge risk: the diff touches 298 lines in `replay_scaled.py`/`tiny.py`, so any upstream change
   near a `nest.` call will conflict (decision D0, not asked to Max).
+
+### 4. S0 extra configs: A, B, C
+
+Purpose: test the shim on code paths that the reference config does not run.
+Each config = reference flags (section 2) + the extra flags below, 1 thread, seed 202.
+"Before" runs used a temporary checkout of `main` (`git worktree`, removed after). "After" runs used `shim`.
+All 6 runs ran at the same time, 1 core each.
+
+| config | extra flags | new code it runs | wall time | digest (main = shim) | result |
+|---|---|---|---|---|---|
+| A | `--homeostasis --schaffer-stdp` | weight downscaling after sleep; CA3→CA1 STDP | 28 min | `010e3cc8…aab5` | PASS |
+| B | `--dg-neurogenesis --dg-perforant-stdp` | new DG cells created mid-run (+120 per epoch); EC→DG learning | 22 min | `615e8c72…bc4` | PASS |
+| C | `--pattern-completion` | CA3 probe (runs instead of replay), intact vs ablated | 35 s | `05cc4b75…4edd` | PASS |
+
+Result: **the shim is bit-identical on all 4 configs tested** (reference + A, B, C).
+
+Notes:
+- Config A: `[SchafferSTDP]` spent 1414 s reading 3,247,605 CA1-incoming synapses with
+  `GetConnections`. That is most of the 28 min. This is the CPU cost that decision D1 compares
+  against the GPU (Phase 0, connection get/set benchmark). Measured with 6 runs in parallel.
+  Section 5 shows that 6 parallel runs are about 10× slower than one run alone, so this
+  number is too high. Measure it again alone before using it.
+- Config C: auto-association confirmed for 0/5 cue levels, on both `main` and `shim`. This is a
+  model result at 1%, not a shim effect. Not checked further.
+- First attempt of A and B failed at once (argparse exit 2): zsh passed the flags as one word.
+  Re-run with separate words. Not a code problem.
+
+### 5. Generator replacement: `--rhythm-gen spike_generator` (branch `shim`, not committed)
+
+Problem: theta and ripple drive use NEST's `sinusoidal_poisson_generator`. NEST GPU does not have
+it. Without a fix, `tiny.py` would catch the error and run **without theta** and with a **flat
+ripple**: a silent model change on the GPU.
+
+Fix (code):
+- `tiny.py`: new `set_rhythm_generator(mode, horizon_ms, seed)`. In mode `spike_generator`,
+  `sinusoidal_poisson_blocks()` computes the same random process in numpy (one Poisson count per
+  0.1 ms step, rate = mean + amp·sin(2πft + phase), clipped at 0). `spike_generator` (which NEST
+  GPU has) plays the trains back. The default path is unchanged.
+- `replay_scaled.py`: new flags `--rhythm-gen {sinusoidal_poisson,spike_generator}` (default
+  `sinusoidal_poisson`) and `--rhythm-horizon-ms`. Theta has no stop time, so trains are
+  pre-computed to a horizon. Default horizon = sleep epochs + homeostasis epochs + cortical recall
+  and G2 time + 1000 ms (9000 ms for the reference flags). A check before the HDF5 export warns if
+  the run went past the horizon. New-mode HDF5 files get attrs `rhythm_gen`, `rhythm_horizon_ms`,
+  `rhythm_n_spikes`. The random numbers come from their own generator (seed + 7301), so the
+  model's other random streams do not change.
+
+Check 1: device match (400 parrot neurons, NEST 3.10):
+
+| drive | NEST device | spike_generator mode | waveform corr | noise floor (NEST vs NEST, other seed) |
+|---|---|---|---|---|
+| theta 1100±1000 Hz, 8 Hz | 1099.2 Hz | 1100.3 Hz | 0.999 | — |
+| ripple 1100±850 Hz, 180 Hz, 300–420 ms | 1110.3 Hz | 1116.3 Hz | 0.992 | 0.992 |
+
+- First version was 1 step (0.1 ms) late. NEST puts spikes at `start <= t < stop`. Fixed to match.
+
+Check 2: default mode is unchanged. Old-device seed 202 = reference digest `2b17274a…399e`. PASS.
+
+Check 3: full model, 3 seeds × 2 modes, reference flags, 1 thread.
+Replay ρ per ripple (F = forward, R = reverse, block 1–4), DG % active in the 2 block-1 ripples,
+mean rate.
+
+| mode | seed | F1 | R1 | F2 | R2 | F3 | R3 | F4 | R4 | DG % f/r | CA3 SUP Hz | CA1 PYR Hz |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| old | 202 | +0.84 | −0.41 | −0.04 | −0.06 | +0.01 | −0.55 | +0.53 | −0.43 | 3.57/3.33 | 20.6 | 9.9 |
+| old | 303 | +0.72 | −0.60 | +0.20 | −0.53 | +0.25 | −0.03 | +0.54 | −0.24 | 3.53/2.88 | 19.7 | 9.1 |
+| old | 404 | +0.54 | −0.42 | +0.09 | −0.18 | +0.39 | +0.03 | +0.49 | −0.15 | 2.83/2.57 | 20.1 | 9.2 |
+| new | 202 | +0.55 | −0.74 | −0.09 | −0.22 | −0.10 | −0.31 | +0.65 | −0.98 | 3.48/**7.67** | 20.3 | 10.3 |
+| new | 303 | +0.34 | −0.69 | +0.31 | −0.33 | +0.32 | +0.08 | +0.84 | −0.27 | **9.62**/2.94 | 19.9 | 9.6 |
+| new | 404 | +0.81 | −0.49 | +0.09 | +0.31 | −0.38 | −0.41 | +0.50 | −0.77 | 3.16/2.46 | 20.2 | 9.7 |
+
+Means: block-1 forward old +0.70, new +0.57. Block-1 reverse old −0.47, new −0.64.
+
+Findings:
+- Rates match (CA3 SUP about 20 Hz, CA1 PYR about 9.5 Hz in both modes).
+- Replay: the new values are inside the seed-to-seed spread of the old values (block-1 forward
+  +0.34 to +0.84). 3 seeds cannot show a small difference, so this is "no sign of a change",
+  not "proven equal".
+- DG: 2 of 6 new values are above the 2–4% band (7.67%, 9.62%). All 6 old values are in band.
+  A sign that DG is very sensitive to the drive, not a fixed shift: the first new seed-202 run
+  (horizon 7000 ms, so different theta random numbers) gave 3.48/3.96%. CLAUDE.md says DG is
+  chaotic across blocks. **Open: run more seeds before calling this equal.**
+- G2 and cortical recall fail in both modes (as before at 1%).
+
+Problems found and fixed:
+- First default horizon (epochs + 3000 ms) was too short. Seed 202 ran the G2 probe to 7800 ms;
+  theta stopped at 7000 ms. The check printed the warning. Fixed the formula; re-ran seed 202.
+- A different horizon changes the shape of the random draws, so the theta trains change too.
+  Runs are repeatable only at the same seed **and** the same horizon.
+
+Cost:
+- Pre-computed theta spikes per 1% run: 67M (horizon 7000 ms) to 85M (9000 ms).
+- One run alone: 201 s in new mode vs 131 s in old mode (+70 s for numpy and the spike_generators).
+- At 12% (×12 neurons) this is about 1 billion spikes. Pre-computing everything is likely too big
+  for the GPU. Better there: fill the trains one epoch at a time. This needs `SetStatus` of
+  `spike_times` after `Simulate`, which Phase 0 must test on NEST GPU.
+- 6 runs in parallel took 25–30 min each, about 10× slower than one run alone. Run fewer at a time.

@@ -76,12 +76,84 @@ def mean_rate(pop, spk, sim_ms: float) -> float:
 # Theta modulation helper
 # -------------------------
 
+# -------------------------
+# Rhythmic drive (theta, ripple): device choice
+# -------------------------
+# Default "sinusoidal_poisson": NEST's sinusoidal_poisson_generator.
+# NEST GPU has no such device. Mode "spike_generator" computes the same random
+# process in numpy and plays it back through spike_generator, which NEST GPU
+# has. Same statistics, different random numbers: runs are NOT bit-identical
+# to the default mode, so compare them across seeds.
+_RHYTHM = {"mode": "sinusoidal_poisson", "horizon_ms": None, "rng": None, "n_spikes": 0}
+
+
+def set_rhythm_generator(mode: str, horizon_ms: float = None, seed: int = 0):
+    """Select the device for theta and ripple drive. Call before the network is built.
+
+    horizon_ms: end time for drives without a stop time (theta). Spike trains
+    are pre-computed up to this time, so the run must not simulate past it.
+    """
+    if mode not in ("sinusoidal_poisson", "spike_generator"):
+        raise ValueError(f"unknown rhythm generator {mode!r}")
+    if mode == "spike_generator" and not horizon_ms:
+        raise ValueError("rhythm generator 'spike_generator' needs horizon_ms")
+    _RHYTHM.update(mode=mode, horizon_ms=horizon_ms,
+                   rng=np.random.default_rng(seed), n_spikes=0)
+
+
+def rhythm_info() -> dict:
+    return {k: _RHYTHM[k] for k in ("mode", "horizon_ms", "n_spikes")}
+
+
+def sinusoidal_poisson_blocks(n, rate, amplitude, freq_hz, phase_deg, start_ms, stop_ms,
+                              dt_ms, rng, block=256):
+    """Spike trains of n independent Poisson processes, in blocks of `block` trains.
+
+    Rate (spikes/s) = rate + amplitude * sin(2*pi*freq_hz*t/1000 + phase), clipped at 0.
+    t is absolute simulation time in ms; phase is in degrees (as in NEST).
+    Same discretisation as NEST's sinusoidal_poisson_generator: one Poisson
+    count per time step, spike times on the grid with start_ms <= time < stop_ms
+    (and time >= dt_ms; NEST 3.10, checked against the device). A count above 1
+    repeats the time (several spikes in one step), which spike_generator accepts.
+
+    Yields lists of sorted float arrays (ms), one array per train.
+    """
+    k = np.arange(max(1, int(round(start_ms / dt_ms))), int(round(stop_ms / dt_ms)))
+    stamps = np.round(k * dt_ms, 6)
+    phi = np.deg2rad(phase_deg)
+    lam = rate + amplitude * np.sin(2.0 * np.pi * freq_hz * stamps / 1000.0 + phi)
+    lam = np.clip(lam, 0.0, None) * dt_ms / 1000.0
+    for a in range(0, int(n), block):
+        counts = rng.poisson(lam, size=(min(block, int(n) - a), k.size))
+        trains = []
+        for row in counts:
+            nz = np.nonzero(row)[0]
+            trains.append(np.repeat(stamps[nz], row[nz]))
+        yield trains
+
+
+def _sinusoidal_spike_generators(n, rate, amplitude, freq_hz, phase_deg, start_ms, stop_ms):
+    """spike_generator nodes that replay sinusoidal_poisson_blocks() trains."""
+    dt = float(sim.GetKernelStatus("resolution"))
+    gens = sim.Create("spike_generator", int(n))
+    a = 0
+    for trains in sinusoidal_poisson_blocks(n, rate, amplitude, freq_hz, phase_deg,
+                                            start_ms, stop_ms, dt, _RHYTHM["rng"]):
+        sim.SetStatus(gens[a:a + len(trains)], [{"spike_times": tr.tolist()} for tr in trains])
+        _RHYTHM["n_spikes"] += int(sum(tr.size for tr in trains))
+        a += len(trains)
+    return gens
+
+
 def maybe_make_theta_generators(n: int, rate_mean: float, rate_amp: float, freq_hz: float, phase: float = 0.0):
     """Create N sinusoidally-modulated Poisson generators (if available in this NEST build).
 
     Returns:
         NodeCollection of generators, or None if the model is unavailable.
     """
+    if _RHYTHM["mode"] == "spike_generator":
+        return _sinusoidal_spike_generators(n, rate_mean, rate_amp, freq_hz, phase,
+                                            0.0, _RHYTHM["horizon_ms"])
     try:
         gens = sim.Create(
             "sinusoidal_poisson_generator",
@@ -123,6 +195,11 @@ def make_swr_event_generators(
         int(n),
         params={"rate": float(sharpwave_rate), "start": float(start_ms), "stop": float(stop_ms)},
     )
+
+    if _RHYTHM["mode"] == "spike_generator":
+        ripple = _sinusoidal_spike_generators(n, ripple_rate_mean, ripple_rate_amp, ripple_hz,
+                                              ripple_phase, start_ms, stop_ms)
+        return sharp, ripple
 
     ripple = None
     try:
