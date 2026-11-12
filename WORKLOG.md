@@ -279,3 +279,217 @@ Checks:
 
 Not tested: a real MPI run (no MPI here). Not fixed: `pattern_recall_specificity` (G2) and the
 DG summary stats still read only local recorder events under MPI.
+
+### 7. Does pattern identity survive to cortex? (1%, 14 blocks, 3 seeds)
+
+Config: S0 reference flags with `--n-swr 14 --threads 3`, seeds 202/303/404 (`out/id14_s*.h5`).
+Wall time: 18 min, 3 runs in parallel. Scored with `decode_identity.py --n-perm 1000`.
+
+Home-group test (p < 0.01 = significant):
+
+| stage | s202 | s303 | s404 |
+|---|---|---|---|
+| CA3 SUP | z +0.96, p 0.001 | z +0.76, p 0.001 | z +1.01, p 0.001 |
+| CA1 PYR | z +0.40, p 0.002 | z +0.42, p 0.001 | z +0.52, p 0.001 |
+| EC LII | z −0.04, p 0.70 | z +0.38, p 0.001 | z +0.10, p 0.16 |
+| EC LV | z −0.09, p 0.75 | z +0.12, p 0.001 (5/14 blocks positive) | z −0.00, p 0.16 |
+| mPFC | z −0.06, p 0.82 | z +0.04, p 0.23 | z +0.05, p 0.33 |
+
+G1 decoder (chance 0.33): CA1 PYR above chance on all 3 seeds (best 0.71, 0.57, 0.64).
+EC LII, EC LV and mPFC are at chance on all seeds.
+
+G2 (recall after lesion): not met on any seed (specificity −0.012, −0.010, 0.000; p ≥ 0.62).
+Only one assembly responds, and it is the one that also fires before the cue (spontaneous
+firing), so the responses are background, not recall.
+
+Result: **at 1%, identity is lost at the CA1 → EC LII step.** It is strong in CA3 and CA1 on
+all seeds, and reaches EC LII on 1 of 3 seeds. RESULTS.md reports that EC LII carries the
+code at 12% (two seeds), so 1% is a lower bound. The cortical hops are the open item.
+
+Side note: `decode_identity.py` prints `modulation +inf%` when the off-pattern mean is 0
+(s303 mPFC). Cosmetic, not fixed.
+
+### 8. Why EC LII loses the pattern: no inhibition, so the most excitable cells always fire
+
+Data: the 3 runs of section 7 plus their wiring exports. Scripts (local, not committed):
+`out/ec_analysis/` (`ec_transfer.py`, `ec_drivers.py`, `ec_readout.py`, `ec_slice.py`).
+
+1. **The pattern is in EC LII's input.** Input per EC LII cell = weight × CA1 spikes that
+   arrive in the SWR windows. Same scorer as `decode_identity.py`:
+
+   | seed | input z (p) | input decode | output z (p) | output decode |
+   |---|---|---|---|---|
+   | 202 | +0.43 (0.002) | 0.71 (p 0.008) | −0.04 (0.68) | 0.14 |
+   | 303 | +0.42 (0.002) | 0.71 (p 0.010) | +0.38 (0.002) | 0.21 |
+   | 404 | +0.52 (0.002) | 0.86 (p 0.002) | +0.10 (0.17) | 0.50 |
+
+   So the loss happens inside EC LII, not on the CA1→EC wiring.
+2. **Which EC LII cells fire is set by their own excitability, not by their input.**
+   Spearman(total output, rheobase) = −0.73 / −0.63 / −0.70. Spearman(total output, mean CA1
+   input) = +0.06 / +0.05 / +0.04. With `I_e = 0` for all cells, only 1–12% of cells ever fire:
+   the CA1 volley is below threshold for a typical cell, so only the excitable tail of the
+   `I_e ~ N(0, 1.5)` spread crosses it.
+3. **The input changes mostly with the size of the whole burst, not with the pattern.** The
+   block-to-block SD of the common input part is 5.0 / 5.4 / 11.2. The own-vs-other pattern
+   difference is 1.6 / 1.3 / 1.9. CA1 burst size varies with CV 0.14–0.34.
+4. **EC LII has no inhibitory input at all.** The wiring shows only `ca1_pyr` → `ec_lii`
+   (50,000 synapses). Nothing can subtract the common burst size or make cells compete.
+
+**Causal test: an EC LII "slice".** The recorded CA1 spikes of each run are replayed into a copy
+of EC LII (same cells, same CA1→EC synapses, build-time weights, no STC; 2 s per run).
+The slice reproduces the model: s202 36.8% of cells ever active (model 36.8%), z −0.037
+(model −0.040). So STC is not the cause.
+
+| variant (all 3 seeds) | active per block | output z | decode |
+|---|---|---|---|
+| model as is | 10–18% | −0.04 / +0.39 / +0.16 | 0.07 / 0.29 / 0.43 |
+| weaker CA1→EC (×0.5–0.9), no inhibition | 1.5–13% | s202 stays ≤ 0; no seed decodes | 0.07–0.43, all n.s. |
+| CA1→EC grouping 1.0 alone | 11–19% | +0.08 / +0.55 / +0.30 | n.s. |
+| **feedforward PV inhibition, w −0.25** | 1.6–1.8% | **+0.51 / +0.48 / +0.51, all p 0.002** | **0.71 / 0.64 / 0.71, p ≤ 0.024** |
+| ff inhibition −0.5 + grouping 1.0 | 2.2–2.5% | +0.60 / +0.46 / +0.59 | 1.00 / 0.57 / 0.71 |
+| feedback inhibition (as built) | 9–15% | no change | n.s. |
+
+The control matters: making EC LII equally sparse with weaker excitation does NOT bring the
+pattern back. Feedforward inhibition does, on all 3 seeds. It scales with the CA1 burst, so it
+removes the common part and EC LII cells compete on relative input.
+
+Feedforward-pool settings in the slice (100 Izhikevich FS cells, CA1→PV K=200 w=0.3, PV→EC K=40)
+are a first guess, not tuned. The feedback variant did not reduce activity much, so it was not
+a fair test.
+
+Biology: inhibition onto MEC LII stellate cells comes from fast-spiking PV+ interneurons, and
+stellate cells interact through them (Couey et al. 2013, cited by later work). Also, CA1 and
+subiculum project mainly to EC layer V, and only weakly to LII/III. The model's direct dense
+CA1→EC LII projection is a simplification.
+
+Status: slice result only, 1%. Not tested in the full model. A model change belongs in
+`tinyHippo` upstream (CLAUDE.md); here it would be an opt-in flag on an experiment branch.
+
+### 9. Feedforward inhibition in the full model (branch `ec-ff-inhibition`)
+
+New opt-in flag `--ec-lii-ff-inhib W` (default off): a pool of N_ec/10 fast-spiking Izhikevich
+cells gets CA1 PYR output (K=200, w 0.3, 1 ms) and inhibits EC LII (K=40, weight W, 1 ms).
+It is wired with numpy and node-ID arrays, not NEST's RNG, so all other random streams stay the
+same. The lesion also zeroes CA1→PV. Default run: digest `8631eb29…`, unchanged.
+
+Runs: section 7 config + `--ec-lii-ff-inhib -0.25`, seeds 202/303/404 (`out/ff_s*.h5`).
+Control: the section 7 runs (`out/id14_s*.h5`), same seeds.
+
+| | control z (p) | with inhibition z (p) |
+|---|---|---|
+| EC LII s202 | −0.04 (0.70) | **+0.52 (0.001)**, 13/14 blocks |
+| EC LII s303 | +0.38 (0.001) | **+0.41 (0.001)**, 11/14 |
+| EC LII s404 | +0.10 (0.16) | **+0.31 (0.012)**, 8/14 |
+| EC LV | −0.09 / +0.12 / −0.00 | −0.00 / +0.04 / +0.00 (all n.s.) |
+| mPFC | −0.06 / +0.04 / +0.05 | −0.11 / −0.16 / +0.11 (all n.s.) |
+
+- EC LII home groups now fire +160–190% more in their pattern's blocks (control +0.1–31%).
+  EC LII is sparse: 1.7–2.1% active (control 11–19%).
+- EC LII decoder: 0.50 / 0.64 (p 0.024) / 0.43. Weak, because the code is very sparse.
+- EC LV and mPFC: still no pattern. G2: not met (specificity −0.041, −0.018; s404 skipped).
+- Upstream: CA3 and CA1 unchanged. DG active 2.4–4.0% (target 2–4%). Replay over all 42
+  ripples: forward ρ +0.352 → +0.331 (paired Wilcoxon p 0.93); reverse ρ −0.320 → −0.239
+  (p 0.022). So reverse replay may get slightly weaker. EC LII drives DG, which drives CA3.
+
+Result: **the CA1 → EC LII step is fixed in the full model on 3 seeds.** The loss moves one step
+down, to EC LV. EC LV is 71–76% active, gets CA1 (30 inputs per cell) and EC LII (20), and has
+no inhibition, the same situation EC LII was in.
+
+1% only, one inhibition weight, pool settings not tuned.
+
+### 10. EC LV: 27% of cells fire with no input, so the input does not matter
+
+Data: the 3 runs with `--ec-lii-ff-inhib -0.25` (`out/ff_s*.h5`) and their wiring exports.
+Scripts: `out/ec_analysis/stage_transfer.py`, `lv_slice.py`.
+
+1. **The pattern is in EC LV's input.** From CA1: z +0.44 / +0.43 / +0.57 (p ≤ 0.004),
+   decode 0.79 / 0.64 / 0.93. From EC LII: z +0.54 / +0.40 / +0.27, but EC LII is now so
+   sparse that its input is about 1% of CA1's (0.4 vs 31 weight × spikes per block).
+2. **EC LV output is set almost only by each cell's excitability.** Spearman(output, rheobase)
+   = −0.99 on all 3 seeds. Spearman(output, mean input) = +0.01 to +0.05.
+3. **Cause: EC LV gets `I_e ~ N(3.0, 1.5)`.** The mean rheobase is then 0.99, and 27% of cells
+   have rheobase < 0, so they fire tonically with no input. EC LV fires at 8.3 Hz both inside
+   and outside the SWR windows. (EC LII: mean rheobase 3.9, no cell below 0.)
+
+Slice (recorded CA1 + EC LII spikes into a copy of EC LV; reproduces the model: 73.5% active,
+8.3 Hz, z −0.007):
+
+| variant | active per block | EC LV z, 3 seeds (all p) | decode |
+|---|---|---|---|
+| as built | 71–74% | −0.01 / +0.02 / +0.01 (n.s.) | 0.00 / 0.43 / 0.14 |
+| `I_e` −2 only | 26–29% | +0.00 / +0.14 / +0.12 (mixed) | n.s. |
+| ff inhibition −0.25 only | 43–44% | +0.15 / +0.13 / +0.13 (0.002) | 0.50 / 0.14 / 0.14 |
+| **`I_e` −1 + ff −0.25** | 22–23% | **+0.18 / +0.17 / +0.18 (0.002)** | **0.64 (0.006) / 0.64 (0.008) / 0.43** |
+| `I_e` −2 + ff −0.25 | 7.5–8% | +0.32 / +0.20 / +0.24 (0.002) | 0.71 (0.004) / 0.29 / 0.36 |
+
+EC LV needs both changes: less tonic drive and feedforward inhibition. The signal stays weaker
+than in EC LII, because EC LV's pattern input comes almost only from CA1.
+
+**A deeper issue, found on the way: at 1% there is no CA1 burst during the SWR windows.**
+CA1 PYR fires 10.0 Hz inside and 9.6 Hz outside the windows (ff_s202). In the control runs
+(id14) it fires even less inside: 9.2 / 8.8 / 9.0 Hz inside vs 9.8 Hz outside. In real SWRs, CA1 pyramidal cells fire several times more than at rest. Here
+the pattern is only a +6–12% change on top of a constant 10 Hz drive, so every cortical stage
+has to pull a small difference out of a large constant input.
+
+### 11. EC LV fix in the full model; mPFC loses its drive
+
+New opt-in flags (branch `ec-ff-inhibition`): `--ec-lv-ie-shift X` (adds X to every EC LV
+cell's I_e, default 0) and `--ec-lv-ff-inhib W` (feedforward PV pool onto EC LV, N_lv/10
+cells, same wiring as the EC LII pool). The lesion zeroes CA1 input to both pools.
+
+Runs: section 9 config + `--ec-lv-ie-shift -1 --ec-lv-ff-inhib -0.25`, seeds 202/303/404
+(`out/lv_s*.h5`). Control: section 9 runs (`out/ff_s*.h5`).
+
+| stage | control (ff) z | with EC LV fix (lv) z, p |
+|---|---|---|
+| EC LII | +0.52 / +0.41 / +0.31 | +0.48 / +0.58 / +0.47, all p 0.001 |
+| **EC LV** | −0.00 / +0.04 / +0.00 (n.s.) | **+0.15 (0.003) / +0.21 (0.001) / +0.23 (0.001)** |
+| mPFC | −0.11 / −0.16 / +0.11 | +0.05 / +0.06 / +0.05 (p 0.06–0.28) |
+
+- EC LV: 21.5–22.7% active (control 71–74%). Decoder 0.43 / 0.36 / 0.57 (p 0.019 on s404).
+  The slice predicted z ≈ +0.17–0.18; the full model gives +0.15–0.23.
+- **mPFC is now almost silent: 1.5–1.7% active (control 32–39%).** Its only feedforward input
+  is EC LV (K=20), and that drive was set for the old 73%-active EC LV. G2 is skipped on all
+  seeds ("assembly too small to cue and score").
+
+Result: the pattern now reaches EC LV on 3 seeds. The next step, EC LV → mPFC, needs its drive
+re-balanced for a sparse EC LV before mPFC can be tested.
+
+### 12. Why CA1 has no SWR burst: CA3 sits in a high, constant-drive state
+
+Check: CA3 SUP and CA1 PYR rate inside the SWR windows vs outside, per epoch (id14 runs).
+There is no burst in any epoch, also not in epoch 0, the only epoch with the SWR background:
+
+- CA3 SUP: 19.1 / 21.7 Hz (epoch 0, inside / outside), then 20–22 / 20 Hz in every epoch.
+- CA1 PYR: 10.5 / 10.4 Hz (epoch 0); over all epochs 9.0 Hz inside vs 9.8 Hz outside.
+
+**Test 1: no theta** (new flag `--no-theta`, branch `ec-ff-inhibition`; section 7 config,
+3 seeds, `out/nt_s*.h5`). Theta and SWRs do not occur together in real sleep, so theta during
+the sleep epochs was a likely cause. Result: no burst either. CA3 SUP fires more without theta
+(26 Hz inside and outside, vs 20 Hz), probably because theta also drove the CA3 interneurons.
+CA1 10.3–10.6 inside vs 9.8–10.0 Hz outside. Replay over all ripples: forward ρ +0.28–0.30
+(control +0.26–0.42), reverse −0.22 to −0.39 (control −0.29 to −0.37). So theta is not the cause.
+
+**Cause: the constant Poisson drive onto CA3 SUP is about 14× larger than the SWR drive.**
+Rate × weight per CA3 SUP cell, from `build_replay_network` defaults with `--dg`:
+
+| drive | rate × weight (per cell, per s) | when |
+|---|---|---|
+| tonic (stands for EC/recurrent background) | 600 Hz × 3.0 = 1800 | always |
+| EC → CA3 | 530 Hz × 2.0 = 1060 | always |
+| CA3 drive | 400 Hz × 2.0 = 800 | always |
+| theta (mean) | 1100 Hz × 0.8 = 880 | always |
+| **sharp wave + ripple** | 280 × 0.35 + 1100 × 0.15 = **263** | epoch 0 windows only |
+
+(The tonic and EC weights get the heterogeneity compensation `wcomp_w`, ×2.3 here, so the
+constant part is even larger.) The replay trigger and scaffold are strong but brief (16 ms and
+4 ms per group) and hit one group at a time.
+
+So CA3 has no quiet baseline: it fires at ~20 Hz with 99.8% of cells active all the time, and
+a "ripple" only reorders spike timing. Real CA3/CA1 pyramidal cells fire at about 1 Hz or less
+in sleep and several times more during SWRs. Every downstream stage then has to read a small
+pattern difference on a large constant input (sections 8–10).
+
+Not tested: lowering the constant CA3/CA1 drive. That changes the whole hippocampal operating
+point (DG, replay and STC were all calibrated at this point), so it is a science change for
+`tinyHippo`, not a quick flag.

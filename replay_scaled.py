@@ -2702,6 +2702,7 @@ class ECModule:
     K_ca1_ec   : int
     w_init     : float
     group_of   : object = None   # int array: group label per EC LII cell (ec_lii_group_labels)
+    ff_pv      : object = None   # nest.NodeCollection -- feedforward PV pool (--ec-lii-ff-inhib)
 
 
 
@@ -2743,6 +2744,7 @@ class ECLVModule:
     # 12% after training is unbounded. Fetching here costs the same scan while
     # the kernel is still small.
     in_conns    : object = None
+    ff_pv       : object = None   # nest.NodeCollection -- feedforward PV pool (--ec-lv-ff-inhib)
     ca1_mask    : object = None
 
 
@@ -2936,6 +2938,43 @@ def build_ec_lii(
     )
 
 
+def build_ff_inhibition(module, ca1_pyr, w_inh, seed,
+                        K_in=200, w_in=0.3, K_out=40, delay=1.0, label="EC LII"):
+    """Feedforward PV inhibition onto an EC population (WORKLOG sections 8-10, experiment).
+
+    `module` is the EC LII or EC LV module; the pool is stored as module.ff_pv.
+
+    A pool of fast-spiking cells (N_ec / 10) gets the same CA1 PYR output as
+    EC LII and inhibits EC LII. The inhibition grows with the size of the CA1
+    burst, so EC LII cells compete on their relative input instead of on
+    their own excitability. Inhibition onto MEC LII stellate cells comes from
+    fast-spiking PV+ interneurons (Couey et al. 2013).
+
+    Wired with numpy (fixed in-degree, multapses allowed) and node-ID arrays,
+    not with NEST's RNG: the NEST random streams, and so all Poisson noise in
+    the run, stay the same as in a run without this pool.
+    """
+    import simbackend as sim
+    N_pv = max(1, module.N // 10)
+    PV = sim.Create("izhikevich", N_pv, params=dict(a=0.1, b=0.2, c=-65.0, d=2.0))
+    rng = np.random.default_rng(seed)
+    ca1 = np.asarray(ca1_pyr.tolist(), dtype=np.int64)
+    pv = np.asarray(PV.tolist(), dtype=np.int64)
+    ec = np.asarray(module.population.tolist(), dtype=np.int64)
+    # node-ID arrays need per-synapse weight and delay arrays
+    n_in, n_out = N_pv * K_in, len(ec) * K_out
+    sim.Connect(ca1[rng.integers(0, len(ca1), n_in)], np.repeat(pv, K_in), "one_to_one",
+                {"synapse_model": "static_synapse", "weight": np.full(n_in, float(w_in)),
+                 "delay": np.full(n_in, float(delay))})
+    sim.Connect(pv[rng.integers(0, N_pv, n_out)], np.repeat(ec, K_out), "one_to_one",
+                {"synapse_model": "static_synapse", "weight": np.full(n_out, float(w_inh)),
+                 "delay": np.full(n_out, float(delay))})
+    print(f"  [FFInhib] feedforward PV inhibition onto {label}: {N_pv} cells, "
+          f"CA1->PV K={K_in} w={w_in}, PV->{label} K={K_out} w={w_inh}")
+    module.ff_pv = PV
+    return PV
+
+
 # ============================================================================
 # Phase 2 — Python STC (Synaptic Tagging and Capture) hook
 # ============================================================================
@@ -3069,6 +3108,7 @@ def build_ec_lv(
     lii_group_of: object = None,  # EC LII group labels (default: index mod n_groups)
     n_groups  : int   = None,   # CA3 sequence-group count (for the above)
     seed_connect: int = 42,
+    ie_shift  : float = 0.0,    # experiment (WORKLOG section 10): added to every cell's I_e
 ) -> "ECLVModule":
     """
     Build EC Layer V population and wire it into the hippocampo-cortical loop.
@@ -3115,8 +3155,8 @@ def build_ec_lv(
     # gap spans ~15-24 mV and a near-threshold volley recruits only the
     # excitable tail.
     sim.SetStatus(EC_LV, "I_e",
-                   np.random.default_rng(22).normal(3.0, 1.5, len(EC_LV))
-                   .clip(0.0, 6.0).tolist())
+                   (np.random.default_rng(22).normal(3.0, 1.5, len(EC_LV))
+                    .clip(0.0, 6.0) + float(ie_shift)).tolist())
 
     # CA1 → EC LV  (fixed_indegree, static — fast connect)
     # With group_frac > 0 both inputs are group-clustered: CA1 cell i and EC LII
@@ -3728,6 +3768,12 @@ def lesion_hippocampus(net, ec_module, eclv_module, stc=None):
         w[keep] = 0.0
         sim.SetStatus(c, "weight", w)
         n += int(keep.sum())
+    for m in (ec_module, eclv_module):          # feedforward PV pools: all input is from CA1
+        pv = getattr(m, "ff_pv", None) if m is not None else None
+        if pv is not None:
+            c = sim.GetConnections(target=pv)
+            sim.SetStatus(c, "weight", np.zeros(len(c)))
+            n += len(c)
     print(f"  [lesion] CA1->cortex silenced: {n:,} synapses zeroed "
           f"(cortex intact, hippocampus disconnected)")
     return n
@@ -5005,6 +5051,22 @@ Dentate gyrus (Phase 6.2):
         "--backend", choices=sim.BACKENDS, default="nest",
         help="Simulator backend (simbackend.py). 'nest' = CPU NEST, the reference.")
     parser.add_argument(
+        "--ec-lii-ff-inhib", type=float, default=None, metavar="W",
+        help="Experiment (WORKLOG section 8): add a feedforward PV pool that gets CA1 "
+             "output and inhibits EC LII with weight W (e.g. -0.25). Off by default.")
+    parser.add_argument(
+        "--no-theta", action="store_true",
+        help="Experiment (WORKLOG section 11): no 8 Hz theta drive. Sleep epochs then "
+             "have no theta, as in real slow-wave sleep, where SWRs occur.")
+    parser.add_argument(
+        "--ec-lv-ff-inhib", type=float, default=None, metavar="W",
+        help="Experiment (WORKLOG section 10): feedforward PV pool onto EC LV, as "
+             "--ec-lii-ff-inhib. Off by default.")
+    parser.add_argument(
+        "--ec-lv-ie-shift", type=float, default=0.0, metavar="X",
+        help="Experiment (WORKLOG section 10): add X to every EC LV cell's I_e "
+             "(e.g. -1). Default 0.")
+    parser.add_argument(
         "--rhythm-gen", choices=["sinusoidal_poisson", "spike_generator"],
         default="sinusoidal_poisson",
         help="Device for theta and ripple drive. 'spike_generator' pre-computes the "
@@ -5655,6 +5717,7 @@ Dentate gyrus (Phase 6.2):
         n_seq_groups   = cfg["n_seq_groups"],
         n_threads      = n_threads,
         suppress_dg_drive = args.dg,   # real DG mossy fibres replace the proxy
+        theta_on       = not args.no_theta,
         n_patterns     = args.n_patterns,
         train_pattern  = args.train_pattern,
         pattern_source = args.pattern_source,
@@ -5860,6 +5923,7 @@ Dentate gyrus (Phase 6.2):
             n_groups   = net["n_seq_groups"],
             seed_connect = (args.seed if args.seed is not None else 42),
             lii_group_of = ec_module.group_of,
+            ie_shift   = args.ec_lv_ie_shift,
         )
         if args.mpfc:
             print(">>> Building mPFC module (Phase 3)...")
@@ -5875,6 +5939,13 @@ Dentate gyrus (Phase 6.2):
                 n_groups   = net["n_seq_groups"],
                 seed_connect = (args.seed if args.seed is not None else 42),
             )
+
+    if args.ec_lii_ff_inhib is not None and ec_module is not None:
+        build_ff_inhibition(ec_module, net["PYR"], args.ec_lii_ff_inhib,
+                            seed=(args.seed if args.seed is not None else 42) + 91)
+    if args.ec_lv_ff_inhib is not None and eclv_module is not None:
+        build_ff_inhibition(eclv_module, net["PYR"], args.ec_lv_ff_inhib,
+                            seed=(args.seed if args.seed is not None else 42) + 92, label="EC LV")
 
     # ---- Plasticity hooks: after ALL populations are wired -------------------
     stc_hook = None
