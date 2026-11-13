@@ -558,3 +558,103 @@ Result: **pattern identity now reaches mPFC on all 3 seeds** (z and, on 2/3, the
 Next: what limits G2 (mPFC recurrent learning, cue size), and a 12% check.
 
 S0 check with all new flags off: digest 8631eb29…, same as sections 6–13. Default runs unchanged.
+
+### 15. LLM layer, code structure and repo layout (2026-11-13, branch `llm-work`)
+
+Branch `llm-work` = `ca3-drive` + `llm-l0` (merged clean). The fork now has only `main` and
+`llm-work`; `shim`, `ec-ff-inhibition`, `ca3-drive` and `llm-l0` were fully contained and deleted.
+
+LLM layer (`llm/`):
+- No-recall threshold, L0 benchmark, tfidf, picked on seeds 0–2, checked on 3–4:
+
+  | threshold | recall@1 (0–2 / 3–4) | false recall (0–2 / 3–4) |
+  |---|---|---|
+  | 0.0 (old default) | 0.78 / 0.71 | 0.92 / 0.94 |
+  | 0.5 | 0.77 / 0.70 | 0.46 / 0.19 |
+  | **0.6 (new default)** | 0.64 / 0.61 | 0.12 / 0.06 |
+  | 0.7 | 0.47 / 0.38 | 0.00 / 0.00 |
+
+- Bug: the stub tokenizer matched only `[a-z0-9]`, so Russian memories were never found. Fixed.
+- The agent paraphrased cues ("кот любимая еда", score 0.3 < 0.6). It now cues with the
+  user's own words and retries once. Live check with the API key: "what does my cat eat" found,
+  "my dog's name" → "don't remember" (correct), "colour of my car" vs "blue Toyota" not found
+  (no shared words; needs embeddings).
+- `SlotBank` (joint plan D3-a): each memory takes the lowest free slot; slot s = model pattern s
+  (`--n-patterns N --n-groups N`); `CapacityError` when full. Not wired to a model backend yet.
+
+Model code:
+- New opt-in flags: `--n-groups`, `--n-mpfc`, `--mpfc-rec-a`, `--mpfc-rec-wmax`, `--mpfc-w-ei`.
+- The ~1400-line `__main__` block of `replay_scaled.py` is split into step functions
+  (`build_model`, `run_consolidation`, `run_cortical_recall`, …) sharing state on `run`.
+  Bit-identical to before on S0 (8631eb29…), `--pattern-completion` and `--homeostasis`.
+- Regression found and fixed: `viewer/export_wiring.py` read populations from module globals,
+  which moved into `main()`. `main()` now keeps its state on `replay_scaled.last_run`.
+  Rebuilt wiring of `s0_fix` matches the old file in all 6.0 M connections.
+
+Repo layout: scripts moved to `analysis/`, `plots/`, `calibration/`, `hpc/`, `legacy/`; docs to
+`docs/`; images to `figures/`. 38 doc links rewritten. `check_nest.py` (NEST 2 API) and a stale
+copy of `make_paper_figure.py` removed. All 19 scripts/checks ran once on real data after the move.
+
+### 16. Capacity: 3, 10 and 30 memories (1%, seeds 202/303)
+
+Config `cx` (section 14). One CA3 group per memory at 10 and 30 (`--n-patterns N`, and
+`--n-groups 30` for 30). Blocks: 14 / 40 / 90 (≈4.7 / 4 / 3 per memory).
+
+Pattern read off without training: in each block, the memory whose home groups fire most
+(chance = 1/N):
+
+| layer | 3 (chance 33%) | 10 (chance 10%) | 30 (chance 3%) |
+|---|---|---|---|
+| CA3 SUP | 100 / 100% | 100 / 100% | 98 / 99% |
+| CA1 PYR | 86 / 100% | 75 / 88% | 29 / 31% |
+| EC LII | 93 / 100% | 68 / 70% | 8 / 2% |
+| EC LV | 64 / 79% | 30 / 38% | 6 / 6% |
+| mPFC | 71 / 71% | 52 / 50% | 7 / 4% |
+
+Cells per memory group at 30: EC LII 33, mPFC 3–4. The trained leave-one-block-out decoder
+(`decode_identity.py`) agrees at 3 and 10 (EC LII 0.60–0.68, CA1 0.40–0.75 at 10) and is at
+chance at 30 everywhere (only 2 training blocks per memory).
+
+Result: **at 1%, ~10 memories reach cortex; 30 stay in the hippocampus** (CA3, CA1). Cortex
+has too few cells per memory. For the LLM path at 1%: N ≤ 10, read the slot from CA1 or EC LII.
+At 10 memories one group per memory means no sequence, so replay ρ is not defined.
+
+### 17. Remote memory (G2): mPFC recurrent learning has almost nothing to learn from
+
+Each mPFC cell: 20 recurrent inputs at 0.9 mV; Hebbian step 0.02 mV per SWR window.
+Co-firing of mPFC pairs inside SWR windows (28 windows per run, ~6 of 120 cells active per
+window):
+
+| run | same-pattern pairs | other-pattern pairs | ratio |
+|---|---|---|---|
+| cx_s202 | 0.58 | 0.19 | 3.1 |
+| cx_s303 | 0.65 | 0.19 | 3.5 |
+| cx_s404 | 0.57 | 0.23 | 2.5 |
+
+The direction is right (same-pattern pairs co-fire ~3× more), but a pair co-fires < 1 time per
+run, so the learned weight change is ~0.01 mV: no assembly forms.
+
+Variants (G2 specificity, own − others; pass = > 0 at p < 0.01):
+
+| variant | seed 202 | 303 | 404 |
+|---|---|---|---|
+| baseline `cx` | −0.002 (p 0.54) | +0.064 (p 0.018) | +0.011 (p 0.29) |
+| A: `--mpfc-k-rec 40 --mpfc-rec-a 0.1 --mpfc-rec-wmax 4` | +0.023 (p 0.21), mPFC fires before the cue | | |
+| B: `--mpfc-w-ei 6` | +0.008 (p 0.29) | | |
+| A + B | +0.012 (p 0.26) | | |
+| `--mpfc-w-rec 3` | +0.030 (p 0.21) | | |
+| `--mpfc-rec-a 0.3 --mpfc-rec-wmax 4` | **+0.050 (p 0.005)** | +0.023 (p 0.20) | −0.001 (p 0.55) |
+| `--mpfc-rec-a 1.0 --mpfc-rec-wmax 4` | +0.044 (p 0.005), baseline not silent | | |
+| `--n-mpfc 360` | −0.009 (p 0.69) | −0.012 (p 0.77) | +0.040 (p 0.0005) |
+
+Result: **G2 not met.** The single-seed passes (rec-a 0.3 on 202, n-mpfc 360 on 404) do not
+replicate; with ~13 variants tested, 1–3 chance passes are expected. mPFC 360 also does not
+improve the mPFC decoder (0.57 / 0.50 / 0.79 vs 0.86 / 0.36 / 0.71). The limit is the number of
+co-firing events, not the weights. Not yet tried: more sleep epochs (more SWR windows); a more
+active mPFC during replay.
+
+Open items:
+- Remote memory (G2): more SWR windows, or more mPFC activity during replay.
+- Capacity beyond 10 at 1%: more cortical cells per memory, or overlapping codes (2–3 groups
+  per memory).
+- `HippoBackend`, recall probe with K repeated cues, state checkpoint: after the above.
