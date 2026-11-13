@@ -117,8 +117,9 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 _script_dir = os.path.dirname(os.path.abspath(__file__))
-if _script_dir not in sys.path:
-    sys.path.insert(0, _script_dir)
+_repo_root = os.path.dirname(_script_dir)  # tiny.py lives in the repo root
+if _repo_root not in sys.path:
+    sys.path.insert(0, _repo_root)
 
 try:
     import h5py

@@ -4,7 +4,9 @@ Rate traces per population, one column per configuration, SWR windows shaded.
 The point of the figure is the SHAPE of activity, not just the mean rate: a
 matched mean can hide a population that has stopped being SWR-locked.
 """
-import sys, glob
+import glob
+import os
+import sys
 import numpy as np, h5py
 import matplotlib
 matplotlib.use("Agg")
@@ -56,8 +58,13 @@ def main(specs, out):
     print("wrote", out)
 
 if __name__ == "__main__":
-    specs=[("homogeneous (CV 0)","out/het2_cv0.h5"),
-           ("het CV 0.3, wcomp 1.5","out/wc4_p15.h5"),
-           ("het CV 0.3, wcomp 2.0","out/wc4_p20.h5"),
-           ("het CV 0.3, wcomp 2.5","out/wc4_p25.h5")]
-    main([(l,p) for l,p in specs if glob.glob(p)], "out/activity_profiles.png")
+    import argparse
+    ap = argparse.ArgumentParser(
+        description="Compare population rate traces of several runs, one column per run.",
+        epilog="example: python plots/plot_activity_profiles.py base=out/cx_s202.h5 "
+               "lr03=out/ra03_s202.h5 --out out/activity.png")
+    ap.add_argument("runs", nargs="+", metavar="LABEL=FILE.h5")
+    ap.add_argument("--out", default="out/activity_profiles.png")
+    a = ap.parse_args()
+    specs = [r.split("=", 1) if "=" in r else (os.path.basename(r), r) for r in a.runs]
+    main([(l, p) for l, p in specs if glob.glob(p)], a.out)

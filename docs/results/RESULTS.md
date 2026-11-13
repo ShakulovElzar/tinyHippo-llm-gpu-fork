@@ -11,9 +11,9 @@ EC LII → DG → CA3 → CA1 → EC LII/LV → mPFC
 ```
 
 Scales 1 % → 100 % of the rat hippocampus from one code path
-([`replay_scaled.py`](replay_scaled.py)); 12 % ≈ 101 k neurons on MareNostrum 5.
+([`replay_scaled.py`](../../replay_scaled.py)); 12 % ≈ 101 k neurons on MareNostrum 5.
 
-![overview](figures/consolidation_overview.png)
+![overview](../../figures/consolidation_overview.png)
 
 **Bottom line so far.** Replay, pattern separation (sparseness only), pattern
 completion, tagging-and-capture, and *selective* consolidation (§11) all work
@@ -30,7 +30,7 @@ engram scorecard and §18/Open items for what is still running.
 
 The tag-decay/capture dynamic validated in §2, and the replay ⊥ consolidation
 dissociation in §3, are also the two findings the companion hardware document,
-[`hippocampal_timescales_as_circuit_spec.md`](hippocampal_timescales_as_circuit_spec.md),
+[`hippocampal_timescales_as_circuit_spec.md`](../hardware/hippocampal_timescales_as_circuit_spec.md),
 takes as its circuit specification: STC as a volatile-memristor tag element,
 and SWR replay as the volatile-organic → non-volatile-inorganic handoff that
 drives systems consolidation. That document also cites Caus, Sławek, Mazur,
@@ -92,7 +92,7 @@ loop the full cortical stack is active (EC LII 6.1 Hz, EC LV 13.0 Hz, mPFC
 **Replay ⊥ consolidation.** Blocking L-LTP capture (`--prp-threshold 999`)
 leaves replay quality identical (Δρ_fwd = 0.000) while cortical consolidation
 goes to zero — the two mechanisms are dissociable in the same model
-([`figures/final_comparison_fig9.png`](figures/final_comparison_fig9.png)).
+([`figures/final_comparison_fig9.png`](../../figures/final_comparison_fig9.png)).
 
 ## 4. Dentate gyrus — pattern separation
 
@@ -1360,7 +1360,7 @@ land on CA3 in a group-aligned way, which neither currently does.
 
 ### The current architecture, counted from the kernel
 
-![Network architecture](figures/architecture/network_architecture_12pct.png)
+![Network architecture](../../figures/architecture/network_architecture_12pct.png)
 
 `figures/architecture/network_architecture_12pct.png` (from
 `plot_architecture.py`) shows all 38 neuronal projections of the current
@@ -2125,7 +2125,7 @@ python plot_consolidation_figure.py --in <file.h5>
 python plot_pattern_completion.py  --in <pattern_completion.h5>
 ```
 
-On MareNostrum 5 (see [`run.sh`](run.sh)):
+On MareNostrum 5 (see [`run.sh`](../../hpc/run.sh)):
 
 ```bash
 sbatch --export=ALL,SCALE=12,DG=1,N_SWR=14 run.sh

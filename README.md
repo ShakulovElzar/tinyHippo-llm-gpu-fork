@@ -14,7 +14,7 @@ The model scales from a 1% test network (~8k neurons, runs on a laptop) to the
 full rat hippocampus (~780k neurons, MareNostrum 5), with the same code path.
 
 A companion document,
-[`hippocampal_timescales_as_circuit_spec.md`](hippocampal_timescales_as_circuit_spec.md),
+[`hippocampal_timescales_as_circuit_spec.md`](docs/hardware/hippocampal_timescales_as_circuit_spec.md),
 takes this model's validated timescales and mechanisms (synaptic tagging and
 capture, replay-driven consolidation) and specifies them as a memristor-based
 neuromorphic circuit — organic volatile devices for the hippocampal tag,
@@ -36,11 +36,11 @@ handoff between them.
 | **Pattern discrimination probes** — per-population Jaccard identity/timing separation across interleaved patterns | `--n-patterns` | implemented |
 
 An interactive map of all capabilities, with the functions implementing each,
-is in [`capability_map.html`](capability_map.html) (open it in a browser).
+is in [`capability_map.html`](docs/capability_map.html) (open it in a browser).
 
 ## Quick start
 
-Install NEST ≥ 3.9 (see [INSTALL.md](INSTALL.md)), then:
+Install NEST ≥ 3.9 (see [INSTALL.md](docs/setup/INSTALL.md)), then:
 
 ```bash
 # 1% test network: replay + dentate gyrus, ~1 min on a laptop
@@ -57,36 +57,70 @@ Results are written to a self-describing HDF5 file (all populations, spike
 times, rates, and per-capability metrics), so analysis and plotting run
 anywhere without NEST.
 
+## LLM episodic memory (this fork)
+
+An LLM agent stores and recalls facts through the model: `remember(text)` puts the
+text in SQLite and gives the memory a slot (one CA3 pattern group per memory),
+`sleep` runs replay and consolidation, `recall(cue)` cues the model and decodes which
+slot comes back. The model holds the index, not the text.
+
+```bash
+export ANTHROPIC_API_KEY=...                       # needed for the agent only
+python -m llm.agent --backend tfidf --db out/agent_memory.sqlite
+python -m llm.bench.run_bench --backend tfidf --sweep   # retrieval benchmark, no LLM
+python -m pytest -q tests
+```
+
+The model backend is not wired in yet; `tfidf` and `keyword` are stand-ins with the
+same interface. Plans: [docs/plans/plan_branch_llm_integration.md](docs/plans/plan_branch_llm_integration.md),
+progress: [docs/results/WORKLOG.md](docs/results/WORKLOG.md).
+
 ## Running on HPC
 
-[`run.sh`](run.sh) is the SLURM launcher (MareNostrum 5, MPI + OpenMP):
+[`hpc/run.sh`](hpc/run.sh) is the SLURM launcher (MareNostrum 5, MPI + OpenMP). Submit from the repo root:
 
 ```bash
 # replay + DG at 12%
-sbatch --export=ALL,SCALE=12,DG=1,NO_STC=1,EC_LII=0,EC_LV=0,MPFC=0 run.sh
+sbatch --export=ALL,SCALE=12,DG=1,NO_STC=1,EC_LII=0,EC_LV=0,MPFC=0 hpc/run.sh
 
 # pattern completion at 12%
-sbatch --export=ALL,SCALE=12,PATTERN_COMPLETION=1 run.sh
+sbatch --export=ALL,SCALE=12,PATTERN_COMPLETION=1 hpc/run.sh
 
 # full stack with DG + consolidation
-sbatch --export=ALL,SCALE=12,DG=1,N_SWR=14 run.sh
+sbatch --export=ALL,SCALE=12,DG=1,N_SWR=14 hpc/run.sh
 ```
 
 Single-neuron f-I calibration has its own job:
-`sbatch --export=ALL,PROBE=dc run_calibrate.sh` → [`run_calibrate.sh`](run_calibrate.sh).
+`sbatch --export=ALL,PROBE=dc hpc/run_calibrate.sh` → [`run_calibrate.sh`](hpc/run_calibrate.sh).
 
 ## Layout
 
-| File | Purpose |
-|---|---|
-| [`replay_scaled.py`](replay_scaled.py) | Main simulation — all populations, capabilities, and HDF5 export |
-| [`tiny.py`](tiny.py) | Shared helpers (seeding, theta and SWR generators) |
-| [`nest_dg_ca3_fi_calibration.py`](nest_dg_ca3_fi_calibration.py) | DG/CA3 single-neuron f-I + DC-rheobase calibration |
-| [`run.sh`](run.sh) / [`run_calibrate.sh`](run_calibrate.sh) | SLURM launchers |
-| [`plot_pattern_completion.py`](plot_pattern_completion.py), [`replay_plot.py`](replay_plot.py), [`make_paper_figure.py`](make_paper_figure.py) | Offline plotting from HDF5 |
-| [`reconstruct_connectivity.py`](reconstruct_connectivity.py) / [`run_reconstruct.sh`](run_reconstruct.sh) | Extract a projection's actual wired connectivity without a full simulation |
-| [`capability_map.html`](capability_map.html) | Visual capability reference |
-| [`hippocampal_timescales_as_circuit_spec.md`](hippocampal_timescales_as_circuit_spec.md) | Companion hardware doc — memristive circuit spec derived from this model's timescales |
+```
+replay_scaled.py     the model: every population, capability and the HDF5 export
+tiny.py              theta / SWR generators and seeding
+simbackend.py        thin layer over NEST, so NEST GPU can be swapped in by a flag
+
+llm/                 LLM episodic memory: SQLite store, backends, slot bank, Claude agent
+tests/               pytest suite for llm/
+viewer/              local web viewer for runs: spikes and wiring
+analysis/            decode_identity.py (pattern-ID readout), h5_digest.py (bit-identity
+                     check), reconstruct_connectivity.py (rebuild a run's wiring)
+plots/               figures from a run's HDF5 (replay_plot.py, consolidation,
+                     pattern completion, architecture, activity profiles, paper figure)
+calibration/         single-neuron Izhikevich f-I calibration (numpy and NEST)
+hpc/                 SLURM launchers for MareNostrum 5; submit from the repo root
+legacy/              early bidirectional-replay prototypes, kept for reference
+docs/
+  setup/             INSTALL.md, COMPATIBILITY.md
+  plans/             HANDOFF.md, LLM / GPU / plasticity plans, phase plan
+  results/           RESULTS.md (upstream log), RESULTS_llm_gpu.md, WORKLOG.md (this fork)
+  hardware/          memristive circuit spec, dendritic convolution notes
+  capability_map.html
+figures/             images used by the docs
+```
+
+Run every script from the repo root, e.g. `python analysis/decode_identity.py out/run.h5`.
+Local run output goes to `out/` (not committed).
 
 ## Results
 
@@ -106,7 +140,7 @@ the work:
 ![pattern completion](/figures/pattern_completion.png)
 
 **Sparsifying the cortex makes consolidation selective — but not yet
-specific.** A cortical sparsity retune (§11 in [RESULTS.md](RESULTS.md)) turns
+specific.** A cortical sparsity retune (§11 in [RESULTS.md](docs/results/RESULTS.md)) turns
 saturated, all-cell L-LTP into a differentiated trace (7.2% of EC cells
 consolidate, weight CV 0.17). Scored against standard engram criteria
 (Josselyn & Tonegawa 2020), that trace is sparse and persistent but not yet
@@ -117,7 +151,7 @@ projections are implicated — DG's perforant path and, more severely, CA3→CA1
 Schaffer collaterals at 100% density — and a topographic fix
 (`--dg-ec-cluster-sigma`) moves DG's identity signal off zero for the first
 time, though the effect is still small (§17–18). Full scorecard and
-in-progress work: [RESULTS.md](RESULTS.md).
+in-progress work: [RESULTS.md](docs/results/RESULTS.md).
 
 ## Key references
 
@@ -134,4 +168,4 @@ in-progress work: [RESULTS.md](RESULTS.md).
 - Izhikevich (2006) — polychronization / delay-based temporal coding
 - Caus, Sławek, Mazur, Zawal, Baś, Szaciłowski, Talanov & Abdi (2026) — memristive
   hippocampus hypothesis; candidate tag-element devices for
-  [`hippocampal_timescales_as_circuit_spec.md`](hippocampal_timescales_as_circuit_spec.md)
+  [`hippocampal_timescales_as_circuit_spec.md`](docs/hardware/hippocampal_timescales_as_circuit_spec.md)

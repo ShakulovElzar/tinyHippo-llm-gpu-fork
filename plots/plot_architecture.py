@@ -12,7 +12,7 @@ source->target population pair, GetConnections by source): no projection
 exists in the kernel that is missing here, and every fixed_indegree count
 there equals K x N_post exactly.
 
-    python plot_architecture.py [--out figures/architecture/network_architecture_12pct.png]
+    python plots/plot_architecture.py [--out figures/architecture/network_architecture_12pct.png]
 """
 import argparse
 import os

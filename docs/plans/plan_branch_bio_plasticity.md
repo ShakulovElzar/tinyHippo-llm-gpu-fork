@@ -1,7 +1,7 @@
 # Branch plan: bio-plausible plasticity
 
 Implement the plasticity specified in
-[hippocampal_timescales_as_circuit_spec.md](hippocampal_timescales_as_circuit_spec.md)
+[hippocampal_timescales_as_circuit_spec.md](../hardware/hippocampal_timescales_as_circuit_spec.md)
 inside the tinyHippo model, so that every mechanism in the spec has a simulated
 counterpart, the spec's falsification tests run in the model, and the model can act
 as a hardware-aware testbed for the proposed tag/capture devices.

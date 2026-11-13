@@ -20,7 +20,7 @@ Written 2026-10-24 for a fresh Claude Code session. Nothing in the old session's
 1. [plan_llm_gpu_joint.md](plan_llm_gpu_joint.md): repo layout, sync policy, schedule, decisions D0-D4, service design. **Authoritative.**
 2. [nest_gpu_migration.md](nest_gpu_migration.md): what the code needs from NEST, what NEST GPU offers, Phases 0-5.
 3. [plan_branch_llm_integration.md](plan_branch_llm_integration.md): LLM phases L0-L6, design, baselines.
-4. [CLAUDE.md](CLAUDE.md): inherited project goal and **methodological rules** (they apply to every result here).
+4. [CLAUDE.md](../../CLAUDE.md): inherited project goal and **methodological rules** (they apply to every result here).
 5. `RESULTS.md` (upstream's log, read-only here), especially §22-§33 and "Open items".
 
 ## 3. State of play
@@ -76,7 +76,7 @@ target maturity; STDP type details; whether a GPU is allocatable on MN5 `uab100`
 - Rheobase by DC current, not Poisson drive: `I_rheo = (5-b)²/0.16 - 140 - I_e`. Keep `b` heterogeneity small
   and below `b_crit`. Calibrated neuron params live in `nest_dg_ca3_fi_calibration.py` (`CANDIDATE_PARAMS`;
   `mc_high I_e = -15.1`).
-- CA3 SUP and CA1 PYR run near saturation: use rate-based readouts (`decode_identity.py`), not Jaccard.
+- CA3 SUP and CA1 PYR run near saturation: use rate-based readouts (`analysis/decode_identity.py`), not Jaccard.
 - Read cell positions from each population's `gid_first`, never the lowest spiking GID.
 - DG is chaotic across blocks; CPU runs are bit-identical only at fixed seed, config, thread count. GPU runs
   will not be, so compare distributions over >=2 seeds. Single-seed or 1%-only results are pilots.

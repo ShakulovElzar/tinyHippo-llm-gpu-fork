@@ -52,8 +52,8 @@
 # Run BOTH arms (control + clustered), same seed, matching JOB H8 exactly
 # apart from --dg-ec-cluster-sigma (and now --ec-lv/--mpfc/--stc, dropped
 # from both arms identically, so the A/B comparison stays apples-to-apples):
-#  sbatch --export=ALL run_reconstruct.sh                       # control
-#  sbatch --export=ALL,CLUSTER_SIGMA=0.05 run_reconstruct.sh    # clustered
+#  sbatch --export=ALL hpc/run_reconstruct.sh                       # control
+#  sbatch --export=ALL,CLUSTER_SIGMA=0.05 hpc/run_reconstruct.sh    # clustered
 #
 # Output: results/ec_gc_connectivity_12pct[_clu<SIGMA>].npz -- an EC LII->GC
 # source/target GID array pair (see reconstruct_connectivity.py's docstring),
@@ -89,7 +89,7 @@ export OMP_PROC_BIND=close
 export OMP_PLACES=cores
 
 srun --cpu-bind=cores \
-  python3 -u reconstruct_connectivity.py \
+  python3 -u analysis/reconstruct_connectivity.py \
     --target ec_lii_gc \
     --out "$OUT" \
     --replay-args \

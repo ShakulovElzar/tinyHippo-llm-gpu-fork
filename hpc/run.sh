@@ -9,30 +9,30 @@
 #SBATCH --partition=gp_bsccs
 
 # Standard Phase 2+3 run (default)
-#  sbatch --export=ALL,SCALE=12,N_SWR=14 run.sh
+#  sbatch --export=ALL,SCALE=12,N_SWR=14 hpc/run.sh
 
 # Phase 3 only (no STC consolidation, fast run for testing the loop)
-#  sbatch --export=ALL,SCALE=12,N_SWR=1,NO_STC=1 run.sh
+#  sbatch --export=ALL,SCALE=12,N_SWR=1,NO_STC=1 hpc/run.sh
 
 # Phase 5 falsification with Phase 3
-#  sbatch --export=ALL,SCALE=12,N_SWR=14,PRP_THRESHOLD=999 run.sh
+#  sbatch --export=ALL,SCALE=12,N_SWR=14,PRP_THRESHOLD=999 hpc/run.sh
 
 # Phase 4 single-alpha homeostasis
-#  sbatch --export=ALL,SCALE=25,N_SWR=14,PRP_THRESHOLD=3.5,HOMEOSTASIS=1,HOMEO_ALPHA=0.75 run.sh
+#  sbatch --export=ALL,SCALE=25,N_SWR=14,PRP_THRESHOLD=3.5,HOMEOSTASIS=1,HOMEO_ALPHA=0.75 hpc/run.sh
 
 # Phase 4 alpha-sweep (3 alphas in one job, ~5h vs ~15h for 3 separate jobs)
-#  sbatch --export=ALL,SCALE=25,N_SWR=14,PRP_THRESHOLD=3.5,HOMEOSTASIS=1,ALPHA_SWEEP=0.50,0.75,0.90 run.sh
+#  sbatch --export=ALL,SCALE=25,N_SWR=14,PRP_THRESHOLD=3.5,HOMEOSTASIS=1,ALPHA_SWEEP=0.50,0.75,0.90 hpc/run.sh
 
 # ---- Phase 6.2 validation at 12% (three new capabilities) -------------------
 # JOB A — bidirectional replay + DG pattern separation, no consolidation stack
 #   (isolates the two so-far-1%-only results at scale; fastest, cleanest read)
-#  sbatch --export=ALL,SCALE=12,DG=1,NO_STC=1,EC_LII=0,EC_LV=0,MPFC=0 run.sh
+#  sbatch --export=ALL,SCALE=12,DG=1,NO_STC=1,EC_LII=0,EC_LV=0,MPFC=0 hpc/run.sh
 #
 # JOB B — CA3 pattern completion probe (separate run mode; ignores STC/cortex)
-#  sbatch --export=ALL,SCALE=12,PATTERN_COMPLETION=1 run.sh
+#  sbatch --export=ALL,SCALE=12,PATTERN_COMPLETION=1 hpc/run.sh
 #
 # JOB C — full integrated stack WITH the real DG (run only after A+B look good)
-#  sbatch --export=ALL,SCALE=12,DG=1,N_SWR=14 run.sh
+#  sbatch --export=ALL,SCALE=12,DG=1,N_SWR=14 hpc/run.sh
 
 # ---- Test 3 at 12% : hippocampus-independent cortical recall ---------------
 # The 1% result (consolidated 0.214 vs control 0.071) is 3 cells vs 1 cell on
@@ -42,7 +42,7 @@
 # JOB F — sanity after the cortical sparsity retune.  DONE, PASSED (2026-08-17):
 #   replay +0.63/-0.66, DG 1.55%, mPFC 1.19 Hz, and consolidation is now
 #   SELECTIVE (862/12005 EC cells, weight CV 0.17) instead of saturated at 98%.
-#  sbatch --export=ALL,SCALE=12,DG=1,N_PATTERNS=2,N_SWR=14 run.sh
+#  sbatch --export=ALL,SCALE=12,DG=1,N_PATTERNS=2,N_SWR=14 hpc/run.sh
 #
 # JOB D — Test 3, consolidated (repeat for SEED=101,202,303)
 #   The 2026-08-17 attempt hit the 20 h wall AFTER finishing all 16 epochs in
@@ -76,7 +76,7 @@
 # whether DG becomes SELECTIVE, and treat rate differences as expected.
 #
 # JOB H1 — heterogeneity alone
-#  sbatch --export=ALL,SCALE=12,DG=1,N_PATTERNS=2,N_SWR=14,HET=0.30,HET_WCOMP=2.3 run.sh
+#  sbatch --export=ALL,SCALE=12,DG=1,N_PATTERNS=2,N_SWR=14,HET=0.30,HET_WCOMP=2.3 hpc/run.sh
 #
 # JOB H2 — heterogeneity + perforant path through the door
 #  sbatch --export=ALL,SCALE=12,DG=1,N_PATTERNS=2,N_SWR=14,HET=0.30,HET_WCOMP=2.3,\
@@ -364,7 +364,7 @@
 #   at EC LII (CA1 modulation ~7% vs ~20% at 12%, as in SS25), so cortex had
 #   nothing to receive. 28 blocks (~9 per pattern) for the G1 decoder; the
 #   control arms leave cortex uniform. Two seeds. ~10.5h each -> --time 13h.
-#   Score: python decode_identity.py --n-blocks 28 <h5...>
+#   Score: python analysis/decode_identity.py --n-blocks 28 <h5...>
 #  sbatch -A uab100 -q acc_resc --time=13:00:00 --export=ALL,SCALE=12,DG=1,N_PATTERNS=3,N_SWR=28,HET=0.30,\
 #HET_WCOMP=2.3,W_EC_DG=0.6,PP_RESIDUAL=0.9,DG_DELAY_JITTER=4.0,PATTERN_SOURCE=ca3,\
 #SCHAFFER_K=500,SCHAFFER_GROUP_FRAC=0.7,CA1_EC_GROUP_FRAC=0.7,CORTEX_GROUP_FRAC=0.7,SEED=202 run.sh

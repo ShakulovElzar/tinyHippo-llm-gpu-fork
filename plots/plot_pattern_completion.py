@@ -10,7 +10,7 @@ sigmoidal rise in the intact curve with the ablated curve flat at zero is the
 recurrent-completion signature (Marr 1971; Nakazawa et al. 2002).
 
 Usage:
-    python plot_pattern_completion.py [--in FILE] [--out FILE]
+    python plots/plot_pattern_completion.py [--in FILE] [--out FILE]
 """
 import argparse
 import os

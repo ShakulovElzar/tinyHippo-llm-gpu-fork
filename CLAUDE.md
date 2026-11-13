@@ -2,8 +2,8 @@
 
 > **This repo is a fork of [max-talanov/tinyHippo](https://github.com/max-talanov/tinyHippo)** (`upstream` remote),
 > created 2026-10-24 for two things that do not belong in the science repo: a **NEST GPU backend** and an
-> **LLM episodic-memory integration**. Read [HANDOFF.md](HANDOFF.md) first, then
-> [plan_llm_gpu_joint.md](plan_llm_gpu_joint.md). Do not change model behaviour here; science changes go to
+> **LLM episodic-memory integration**. Read [HANDOFF.md](docs/plans/HANDOFF.md) first, then
+> [plan_llm_gpu_joint.md](docs/plans/plan_llm_gpu_joint.md). Do not change model behaviour here; science changes go to
 > `tinyHippo` and are merged in with `git merge upstream/main`. The rest of this file is inherited from
 > upstream and still applies.
 
@@ -39,7 +39,7 @@ The core scientific claims the model has to support:
 
 A companion goal is hardware. The model's validated timescales are turned into a
 memristive neuromorphic circuit spec in
-[hippocampal_timescales_as_circuit_spec.md](hippocampal_timescales_as_circuit_spec.md).
+[hippocampal_timescales_as_circuit_spec.md](docs/hardware/hippocampal_timescales_as_circuit_spec.md).
 
 ### Where things stand
 
@@ -51,8 +51,8 @@ topographic or group clustering: EC LII→DG (`--dg-ec-cluster-sigma`), CA3→CA
 Schaffer (`--schaffer-group-frac`) and CA1→EC LII (`--ca1-ec-group-frac`) carry
 the code to EC LII at 12% on two seeds. The cortical hops (CA1→EC LV,
 EC LII→EC LV, EC LV→mPFC) are next, via `--cortex-group-frac`. Score runs with
-`decode_identity.py`.
-[RESULTS.md](RESULTS.md) has the up-to-date record; its "Open items" section is
+`analysis/decode_identity.py`.
+[RESULTS.md](docs/results/RESULTS.md) has the up-to-date record; its "Open items" section is
 the current to-do list.
 
 ## Key files
@@ -61,11 +61,11 @@ the current to-do list.
   population and capability, plus the HDF5 export.
 - [tiny.py](tiny.py): shared helpers for seeding and for the theta and SWR
   generators.
-- [run.sh](run.sh): SLURM launcher for MN5. Named jobs (JOB A…, H1…H11) are
+- [run.sh](hpc/run.sh): SLURM launcher for MN5. Named jobs (JOB A…, H1…H11) are
   documented in its header comments.
-- [RESULTS.md](RESULTS.md): the numbered experiment log (§1…). Add a new
+- [RESULTS.md](docs/results/RESULTS.md): the numbered experiment log (§1…). Add a new
   section for each result; don't rewrite older ones.
-- [mem_cons_plan.md](mem_cons_plan.md): the phase plan.
+- [mem_cons_plan.md](docs/plans/mem_cons_plan.md): the phase plan.
   [watson2025_update_report.md](watson2025_update_report.md) covers the CA3
   wiring history.
 
@@ -82,7 +82,7 @@ python replay_scaled.py --scale 1 --dg --dg-scale 2 --no-figures
 ```
 
 - 1% runs are local and take ~10–20 min with the full stack. Anything above
-  ~1% runs on MN5 through `sbatch --export=ALL,SCALE=12,... run.sh`.
+  ~1% runs on MN5 through `sbatch --export=ALL,SCALE=12,... hpc/run.sh`.
 - Local ad hoc sweeps go to `out/`. MN5 results the user uploads land in
   `res/<date>/`. Neither is committed.
 
@@ -107,6 +107,6 @@ python replay_scaled.py --scale 1 --dg --dg-scale 2 --no-figures
   identical config adds nothing; replicate across seeds instead.
 - **Read cell positions from each population's `gid_first`**, never from the
   lowest spiking GID. A silent edge cell shifts every home-group label
-  (RESULTS.md §27). `decode_identity.py` handles this.
+  (RESULTS.md §27). `analysis/decode_identity.py` handles this.
 - Treat single-seed or 1%-only results as pilots until they replicate at 12%
   and across seeds.

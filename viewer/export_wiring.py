@@ -26,13 +26,13 @@ import h5py
 import numpy as np
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, REPO)
+sys.path.insert(0, os.path.join(REPO, "analysis"))
 import reconstruct_connectivity as rc  # noqa: E402
 
 CHUNK = 1_000_000  # connections read per slice
 
 # HDF5 group -> where save_replay_hdf5() takes that population from:
-# (variable in the replay_scaled namespace, then key in `net` or attribute).
+# (field of replay_scaled.last_run, then key in `net` or attribute).
 POP_SOURCES = {
     "ca3_sup": ("net", "CA3_SUP"), "ca3_deep": ("net", "CA3_DEEP"),
     "ca3_int_sup": ("net", "CA3_INT_SUP"), "ca3_int_deep": ("net", "CA3_INT_DEEP"),
@@ -80,6 +80,9 @@ def main():
     rc.CAPTURE_FROM = []
     t0 = time.perf_counter()
     _, ns = rc.build_network(flags)
+    # replay_scaled.main() keeps its state on `last_run`, not as module globals
+    if ns.get("last_run") is not None:
+        ns = vars(ns["last_run"])
     import nest
 
     # Every population in the run file must exist in the rebuild with the

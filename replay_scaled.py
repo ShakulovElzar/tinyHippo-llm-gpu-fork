@@ -6474,10 +6474,15 @@ def export_results(args, run):
     else:
         print("\n>>> Figure generation skipped (--no-figures).")
         print(f"    To plot locally, run:")
-        print(f"    python replay_plot_from_hdf5.py --in {hdf5_path} --save-prefix replay_plots/run1")
+        print(f"    python plots/replay_plot.py --in {hdf5_path} --save-prefix replay_plots/run1")
 
     print(f"\n>>> Total wall time: {time.perf_counter()-run.t_wall:.1f}s")
     print(">>> Done.")
+
+
+# State of the most recent main() call. viewer/export_wiring.py reads the
+# rebuilt populations from it after reconstruct_connectivity stops the run.
+last_run = None
 
 
 def main(argv=None):
@@ -6487,7 +6492,8 @@ def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
     sim.use(args.backend)
-    run = types.SimpleNamespace()
+    global last_run
+    run = last_run = types.SimpleNamespace()
     setup_run(args, parser, run)
     run_pattern_completion_probe(args, parser, run)
     build_model(args, run)

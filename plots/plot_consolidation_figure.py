@@ -14,7 +14,7 @@ HDF5 file:
   F    engram               — final weight distribution (bimodal = consolidated)
 
 Usage:
-    python plot_consolidation_figure.py [--in FILE] [--out FILE]
+    python plots/plot_consolidation_figure.py [--in FILE] [--out FILE]
 """
 import argparse
 import os

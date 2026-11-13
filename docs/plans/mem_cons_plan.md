@@ -1,4 +1,4 @@
-![project plan](mem_cons.png)
+![project plan](../../figures/mem_cons.png)
 
 
 **Why STC fits this circuit without a new NEST model.** The standard `stdp_synapse` already gives you early-LTP correctly — it computes the Δw from each SWR event's pre→post timing. The tag is simply that Δw itself: a synapse that was potentiated by a single SWR carries a tag strength proportional to how well its pre-neuron (CA1 group k) fired before its post-neuron (EC LII). All you need on top of STDP is a Python hook that runs between SWR events, reads the current weight array via `nest.GetStatus()`, computes tag decay, checks whether the per-EC-neuron PRP pool has crossed threshold, and writes L-LTP weights back via `nest.SetConnections()`. This is 50–80 lines of numpy, fully serialisable to HDF5, and adds less than 30 MB of RAM at 10% scale.

@@ -48,7 +48,7 @@ How it works
 
 Usage
 -----
-    python reconstruct_connectivity.py --target ec_lii_gc \\
+    python analysis/reconstruct_connectivity.py --target ec_lii_gc \\
         --replay-args --scale 1 --dg --ec-lii --ec-lv --mpfc \\
         --n-patterns 3 --n-swr 14 --stc --het 0.30 --het-wcomp 2.3 \\
         --w-ec-dg 0.6 --pp-residual 0.9 --dg-delay-jitter 4.0 \\
@@ -70,12 +70,14 @@ another projection: add its module name(s) to CAPTURE_FROM, and a branch in
 extract() that knows which two populations to intersect.
 """
 import argparse
+import os
 import sys
 import time
 
 import numpy as np
 
-REPLAY_SCALED_PATH = "replay_scaled.py"
+REPLAY_SCALED_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                  "replay_scaled.py")
 
 # function names whose return value main()'s CLI block produces that we need
 # a handle on afterwards -- add to this (and to extract() below) to support

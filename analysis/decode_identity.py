@@ -18,7 +18,7 @@ before that attribute existed need --gid-first POP=GID: the lowest spiking GID i
 NOT reliable (an edge cell that never fires shifts every home-group label, see
 RESULTS.md SS27).
 
-    python decode_identity.py run1.h5 run2.h5 --gid-first ec_lii=1097544
+    python analysis/decode_identity.py run1.h5 run2.h5 --gid-first ec_lii=1097544
 """
 import argparse
 

@@ -6,8 +6,8 @@ A plain file hash never matches across runs: the export writes
 instead: every dataset's name, dtype, shape and values, and every attribute
 except the volatile ones, walked in sorted order.
 
-    python h5_digest.py run_A.h5 run_B.h5        # one digest per file
-    python h5_digest.py --diff run_A.h5 run_B.h5 # list differing objects
+    python analysis/h5_digest.py run_A.h5 run_B.h5        # one digest per file
+    python analysis/h5_digest.py --diff run_A.h5 run_B.h5 # list differing objects
 """
 
 from __future__ import annotations

@@ -9,23 +9,23 @@
 #SBATCH --partition=gp_bsccs
 
 # Phase 6.1 f-I calibration (default params)
-#   sbatch run_calibrate.sh
+#   sbatch hpc/run_calibrate.sh
 
 # Even finer threshold resolution (10 Hz steps, more repeats -> tighter rheobase)
-#   sbatch --export=ALL,N_REPEATS=16,FINE_RATE_STEP=10 run_calibrate.sh
+#   sbatch --export=ALL,N_REPEATS=16,FINE_RATE_STEP=10 hpc/run_calibrate.sh
 
 # Re-tuning MC_HIGH's I_e: sweep the threshold region only, cheaply
-#   sbatch --export=ALL,RATE_MAX=1200,FINE_RATE_MAX=1200,FINE_RATE_STEP=10 run_calibrate.sh
+#   sbatch --export=ALL,RATE_MAX=1200,FINE_RATE_MAX=1200,FINE_RATE_STEP=10 hpc/run_calibrate.sh
 
 # DC rheobase only -- this is the measurement that tests the 5.0x MC target.
 # Much cheaper than the Poisson sweep (no synapses, deterministic).
-#   sbatch --export=ALL,PROBE=dc run_calibrate.sh
+#   sbatch --export=ALL,PROBE=dc hpc/run_calibrate.sh
 
 # Finer DC resolution
-#   sbatch --export=ALL,PROBE=dc,DC_STEP=0.01 run_calibrate.sh
+#   sbatch --export=ALL,PROBE=dc,DC_STEP=0.01 hpc/run_calibrate.sh
 
 # Data-only run, no PNG (e.g. for a batch of calibration variants)
-#   sbatch --export=ALL,NO_FIGURES=1 run_calibrate.sh
+#   sbatch --export=ALL,NO_FIGURES=1 hpc/run_calibrate.sh
 
 SIM_MS=${SIM_MS:-3000}
 N_REPEATS=${N_REPEATS:-8}
@@ -83,7 +83,7 @@ OPTIONAL_FLAGS=""
 [ "$NO_FIGURES" = "1" ] && OPTIONAL_FLAGS="$OPTIONAL_FLAGS --no-figures"
 
 srun --cpu-bind=cores \
-  python3 -u "nest_dg_ca3_fi_calibration.py" \
+  python3 -u "calibration/nest_dg_ca3_fi_calibration.py" \
     --threads      "$SLURM_CPUS_PER_TASK" \
     --sim-ms       "$SIM_MS" \
     --n-repeats    "$N_REPEATS" \

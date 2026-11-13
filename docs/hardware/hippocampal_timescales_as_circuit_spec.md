@@ -5,7 +5,7 @@
 
 Learning in this system runs on eight processes spanning nine orders of magnitude, from a single receptor gating event to a memory trace redistributing across cortex over months. What matters for hardware is not the molecular detail of each stage but three facts: which stages are fast enough to force analog/continuous-time circuitry, which are slow enough that a clocked digital design is free, and where the biological threshold behavior maps directly onto a specific circuit primitive.
 
-![Eight consolidation stages plotted on one logarithmic time axis from 1 ms to 10 years — bar position marks onset, length marks characteristic duration, and stages visibly overlap rather than handing off in strict sequence.](timescale_axis.png)
+![Eight consolidation stages plotted on one logarithmic time axis from 1 ms to 10 years — bar position marks onset, length marks characteristic duration, and stages visibly overlap rather than handing off in strict sequence.](../../figures/timescale_axis.png)
 
 *Fig. 1 — All eight consolidation stages on one log time axis. Full molecular detail (receptor subunits, kinase cascades, transcription factors) is in the companion consolidation-timescales document; what carries over to the hardware discussion below is just the numbers.*
 
@@ -24,7 +24,7 @@ Learning in this system runs on eight processes spanning nine orders of magnitud
 
 The same eight stages, redrawn and colored by which memristor tier implements them (§4.5): **blue** = quick/organic, hippocampal-local; **purple** = replay, the stage that touches both tiers at once; **orange** = slow/inorganic, cortical.
 
-![Timescale map: eight consolidation stages on a log time axis from 1 ms to 10 years, colored by memristor tier — blue for quick/organic stages from neurotransmission through late-LTP, purple for the replay stage that bridges both tiers, orange for systems consolidation on the slow/inorganic tier.](timescale_interactive_map.svg)
+![Timescale map: eight consolidation stages on a log time axis from 1 ms to 10 years, colored by memristor tier — blue for quick/organic stages from neurotransmission through late-LTP, purple for the replay stage that bridges both tiers, orange for systems consolidation on the slow/inorganic tier.](../../figures/timescale_interactive_map.svg)
 
 *Fig. 1′ — Static rendering of Fig. 1's timescale axis, colored by memristor tier per §4.5. Use the table below to jump to a stage's section.*
 
@@ -43,7 +43,7 @@ The same eight stages, redrawn and colored by which memristor tier implements th
 
 The synaptic tagging-and-capture (STC) mechanism described in the hippocampal plasticity literature has a clean circuit reading: a tag is set by coincident activity, decays with a fixed time constant if nothing happens, and is *captured* — converted to a stable, non-decaying state — only if a separate signal (biologically, a plasticity-related-protein pool) crosses threshold before the tag decays. This is close to the operating description of a **volatile threshold-switching memristor**: a device that transitions to a low-resistance state on a triggering pulse and spontaneously relaxes back over an intrinsic retention time — unless something latches it into a non-volatile state first.
 
-![Synaptic weight versus successive sharp-wave-ripple events. Before event 4 the weight jumps and partly decays each cycle. At event 4 the plasticity-related-protein pool crosses threshold, decay stops, and weight climbs in a clean staircase — normal capture. A dashed counterfactual trace shows the same jumps but with capture blocked: weight oscillates at a flat baseline and never consolidates.](weight_consolidation.png)
+![Synaptic weight versus successive sharp-wave-ripple events. Before event 4 the weight jumps and partly decays each cycle. At event 4 the plasticity-related-protein pool crosses threshold, decay stops, and weight climbs in a clean staircase — normal capture. A dashed counterfactual trace shows the same jumps but with capture blocked: weight oscillates at a flat baseline and never consolidates.](../../figures/weight_consolidation.png)
 
 *Fig. 2 — The tag-decay/capture dynamic, and the falsification test it implies. Both traces receive identical STDP-driven jumps per event (replay quality is unaffected either way); they diverge only in whether the tag gets captured before it decays.*
 
@@ -53,7 +53,7 @@ This section specifies the tag's *time-domain* behavior — onset, decay, captur
 
 ## 3. The dendritic-convolution pipeline architecture
 
-![Reference circuit topology for the dendritic-convolution pipeline: per-synapse threshold units feed a two-level hierarchy of OR-gated refractory junctions (each level with its own 5–10 ms τ_rf), converging on a soma that also receives a direct, dendritic-bypass inhibitory input, followed by a fixed-delay axon stage.](dendritic_convolution.png)
+![Reference circuit topology for the dendritic-convolution pipeline: per-synapse threshold units feed a two-level hierarchy of OR-gated refractory junctions (each level with its own 5–10 ms τ_rf), converging on a soma that also receives a direct, dendritic-bypass inhibitory input, followed by a fixed-delay axon stage.](../../figures/dendritic_convolution.png)
 
 *Fig. 3 — High-level neuron architecture, shown as two layers over the same physical topology: (A) synapse and dendritic-spike generation, and the timescales of dendritic-spike propagation along the dendritic tree; (B) synaptic homeostasis, short-term plasticity, and neuromodulation-driven tagging — through E-LTP, L-LTP, and replay — to memory consolidation, each mapped to the neuronal compartment where it occurs.*
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-replay_plot_from_hdf5.py
+replay_plot.py
 ========================
 Read the HDF5 produced by replay_scaled.py (--out-hdf5 flag) and regenerate
 all figures *locally*, without needing NEST installed.
@@ -9,14 +9,14 @@ all figures *locally*, without needing NEST installed.
 Examples
 --------
   # Basic: show plots interactively
-  python replay_plot_from_hdf5.py --in replay_output_1pct/replay_1pct.h5
+  python plots/replay_plot.py --in replay_output_1pct/replay_1pct.h5
 
   # Save PNGs silently (typical post-MN5 workflow)
-  python replay_plot_from_hdf5.py --in replay_output_1pct/replay_1pct.h5 \\
+  python plots/replay_plot.py --in replay_output_1pct/replay_1pct.h5 \\
          --save-prefix figures/run1
 
   # Limit raster to first 1000 ms and use finer rate bins
-  python replay_plot_from_hdf5.py --in replay_1pct.h5 \\
+  python plots/replay_plot.py --in replay_1pct.h5 \\
          --save-prefix figs/run1 --rate-bin-ms 5
 """
 

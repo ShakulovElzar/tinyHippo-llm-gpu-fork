@@ -18,18 +18,18 @@
 # ---- alpha = 0.50  (aggressive)  ---------------------------------
 sbatch -A uab100 -q acc_resb \
   --export=ALL,SCALE=25,N_SWR=14,PRP_THRESHOLD=3.5,HOMEOSTASIS=1,HOMEO_ALPHA=0.50 \
-  run.sh
+  hpc/run.sh
 
 # ---- alpha = 0.90  (mild)  ---------------------------------------
 sbatch -A uab100 -q acc_resb \
   --export=ALL,SCALE=25,N_SWR=14,PRP_THRESHOLD=3.5,HOMEOSTASIS=1,HOMEO_ALPHA=0.90 \
-  run.sh
+  hpc/run.sh
 
 # ---- both at once  -----------------------------------------------
 for A in 0.50 0.90; do
   sbatch -A uab100 -q acc_resb \
     --export=ALL,SCALE=25,N_SWR=14,PRP_THRESHOLD=3.5,HOMEOSTASIS=1,HOMEO_ALPHA=${A} \
-    run.sh
+    hpc/run.sh
 done
 
 # Output filenames will collide!  Each run will produce
