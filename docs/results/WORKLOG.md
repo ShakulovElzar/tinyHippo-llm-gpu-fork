@@ -658,3 +658,63 @@ Open items:
 - Capacity beyond 10 at 1%: more cortical cells per memory, or overlapping codes (2–3 groups
   per memory).
 - `HippoBackend`, recall probe with K repeated cues, state checkpoint: after the above.
+
+### 18. Is the cortical trace learned? No-plasticity control, a Hebbian bug, and G2 again (2026-11-13)
+
+All runs: `cx` config (section 14), 3 memories, 14 blocks, seeds 202/303/404. Two new opt-in flags,
+defaults unchanged (with the flags off the code paths are the old ones):
+- `--no-stc-hook`: keep the `--stc` epoch structure, skip CA1→EC learning. With `--no-mpfc-assoc`
+  this switches off all learning in the `cx` config.
+- `--hebb-keep-strong`: in both mPFC Hebbian hooks, potentiation never lowers a weight.
+
+Runs: `np_*` (no learning), `ks_*` (`--hebb-keep-strong`), `kr_*` (+ `--mpfc-rec-a 0.3
+--mpfc-rec-wmax 4`), `kd_*` (+ `--mpfc-k-rec 60 --mpfc-w-rec 0.3 --mpfc-rec-a 0.1
+--mpfc-rec-wmax 1.4 --g2-trials 12`). Wall time 19–38 min per batch of 3.
+
+**1. Control without learning.** Template readout (chance 33%), cx → np:
+CA1 86/100/93 → 71/86/86%, EC LII 93/100/93 → 86/86/100%, EC LV 64/79/64 → 64/79/57%,
+mPFC 71/71/79 → 71/79/79%. G2 −0.002/+0.064/+0.011 → +0.070/+0.031/+0.009.
+Result: **the identity seen in cortex in sections 14–17 is carried by the built-in group wiring,
+not learned.** Learning added nothing measurable.
+
+**2. Bug: the mPFC Hebbian step clamped weights DOWN.** `w = min(w + A, w_max)` with the hook's
+`w_max = 2.4`, but section 14 set `--w-eclv-mpfc 6`. Every co-active EC LV→mPFC synapse was cut
+from 6 to 2.4 (568/2400 in cx_s202; mean 6.0 → 5.1). Recurrent mPFC weights above 2.4 had the
+same problem. With `--hebb-keep-strong` (ks): EC LV→mPFC stays at 6.0, mPFC active cells per SWR
+window 6 → 19–23, recurrent own−other weight +0.022/−0.013/+0.036 mV (cx: −0.019/−0.056/−0.010).
+G2 +0.052/−0.084/−0.022.
+
+**3. Room to learn (kr).** Recurrent own−other weight **+0.29/+0.25/+0.21 mV on all 3 seeds**
+(w0 2.07; 91–141 synapses at w_max). First learned, pattern-specific cortical trace in this
+config. G2 −0.021/+0.017/−0.018: the cue gives a global burst, not the own assembly. Expected:
+an uncued cell gets ~1.7 inputs from a 10-cell cue at K = 20 (see `--mpfc-k-rec` help), so
++0.29 mV per synapse is ~0.5 mV.
+
+**4. Denser recurrent wiring (kd, K = 60, same total weight).** Own−other +0.044/+0.024/+0.019 mV
+(≈ 4% of w0, kr ≈ 14%). G2 +0.014/+0.013/+0.020 (p ≥ 0.18). Pre-cue baseline is 0.5–0.76 of
+the assembly on 2 seeds (kr_s303 too: 0.35–0.61): after the lesion the priming drive makes mPFC
+fire without a cue, so the G2 test is not valid on those runs. mPFC readout dropped to 64%.
+
+Result: **G2 still not met.** What changed: learning in mPFC now works and is pattern-specific
+(kr, 3/3 seeds); before the fix it worked against the pattern. What blocks G2 at 1%: 120 mPFC
+cells, sparse recurrent input per cue, and a priming state that is often not silent before the
+cue. Not fixed by learning rate or in-degree alone.
+
+**5. Priming sweep (kr flags + `--g2-trials 12`, seed 303, `pr*_s303`).** `--cr-prime-rate`
+120 (kr) / 90 / 60 / 30 Hz: pre-cue baseline 0.35–0.61 / 0.74–0.91 / 0.00–0.22 / 0.16–0.42;
+G2 +0.017 / +0.001 / +0.014 / −0.014 (p ≥ 0.22). The baseline does not follow the priming.
+Cause: the lesion zeroes only CA1 → cortex. EC LV keeps firing at 2.7 Hz (its own background,
+section 10) and drives mPFC through the 6 mV EC LV → mPFC weights, so mPFC fires at ~1.9 Hz
+before any cue. That firing carries no pattern and swamps a cue whose learned effect is
+~0.5 mV per cell.
+
+Result: **at 1%, G2 cannot be shown with these mechanisms.** The learned trace exists in the
+weights (kr, 3/3 seeds), but the recall test cannot read it out: too few recurrent inputs per
+cue at 120 mPFC cells, plus pattern-free EC LV drive after the lesion.
+
+Open items:
+- Report own−other recurrent weight as the consolidation readout next to G2.
+- 12%: run `kr` flags (`--hebb-keep-strong --mpfc-rec-a 0.3 --mpfc-rec-wmax 4`); 12× more mPFC
+  cells removes the 1.7-input limit.
+- Decide whether the lesion should also silence EC LV → mPFC drive, or
+  whether G2 should be scored against a per-trial pre-cue baseline.

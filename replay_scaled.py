@@ -3556,8 +3556,12 @@ def run_mpfc_assoc_hook(hook, eclv_module, mpfc_module,
                         # w_max caps the volley below threshold: at K=20 a weight
                         # of 2.0 would reach 40 mV and undo the sparsening that
                         # the reduced w_eclv_mpfc buys. 0.8 -> at most ~16 mV.
-                        w_max=2.4, w_min=0.05):
+                        w_max=2.4, w_min=0.05, keep_strong=False):
     """Strengthen EC LV -> mPFC where replay co-activated both ends.
+
+    keep_strong: potentiation never lowers a weight. Without it a co-active
+    synapse that starts above w_max (e.g. --w-eclv-mpfc 6) is clamped DOWN to
+    w_max, so the "Hebbian" step weakens exactly the synapses replay used.
 
     Called once per SWR event, after nest.Simulate() for that epoch.
     """
@@ -3588,7 +3592,8 @@ def run_mpfc_assoc_hook(hook, eclv_module, mpfc_module,
     # synapse whose source is not EC LV (see build_mpfc_assoc_hook).
     both   = valid & pre_a & post_a    # Hebbian: co-activation -> potentiate
     hetero = valid & post_a & ~pre_a   # post without pre -> weak depression
-    hook.w[both]   = np.minimum(hook.w[both]   + A_assoc,  w_max)
+    pot = np.minimum(hook.w[both] + A_assoc, w_max)
+    hook.w[both]   = np.maximum(hook.w[both], pot) if keep_strong else pot
     hook.w[hetero] = np.maximum(hook.w[hetero] - A_hetero, w_min)
     # .tolist() here allocated ~1.5M Python floats per call, 64 calls per run --
     # this, not the (already vectorised) spike lookup, was the dominant cost.
@@ -5535,6 +5540,10 @@ Dentate gyrus (Phase 6.2):
         help="Enable Phase 2 STC hook: Python STDP + tag/PRP between SWR epochs. "
              "Requires --ec-lii.")
     parser.add_argument(
+        "--no-stc-hook", action="store_true",
+        help="Keep the --stc epoch structure but skip the CA1->EC learning hook. "
+             "With --no-mpfc-assoc this is the no-plasticity control.")
+    parser.add_argument(
         "--n-swr", type=int, default=7, metavar="N",
         help="Number of SWR epochs for multi-epoch consolidation run (default: 7). "
              "Each epoch simulates one forward+reverse SWR pair. "
@@ -5557,6 +5566,11 @@ Dentate gyrus (Phase 6.2):
         help="Disable mPFC lateral inhibition. Without it every mPFC cell fires "
              "on every SWR, so the EC LV->mPFC association is non-selective and "
              "no engram subset forms.")
+    parser.add_argument(
+        "--hebb-keep-strong", action="store_true",
+        help="mPFC Hebbian hooks: potentiation never lowers a weight. Default off "
+             "keeps the old rule, which clamps co-active synapses above w_max "
+             "down to w_max.")
     parser.add_argument(
         "--no-mpfc-assoc", action="store_true",
         help="Disable the EC LV->mPFC associative (Hebbian) build-up that forms "
@@ -6052,7 +6066,7 @@ def build_model(args, run):
 
     # --- Plasticity hooks: only after ALL populations are wired ---
     run.stc_hook = None
-    if args.stc and run.ec_module is not None:
+    if args.stc and run.ec_module is not None and not args.no_stc_hook:
         print(">>> Initialising STC hook (Phase 2)...")
         run.stc_hook = build_stc_hook(run.ec_module)
 
@@ -6134,7 +6148,8 @@ def run_consolidation(args, run):
                                     t_swr_end=epoch_t0 + _we,
                                     A_assoc=args.mpfc_rec_a,
                                     A_hetero=args.mpfc_rec_a / 5.0,
-                                    w_max=args.mpfc_rec_wmax)
+                                    w_max=args.mpfc_rec_wmax,
+                                    keep_strong=args.hebb_keep_strong)
 
         # Cortical association build-up: same two SWR windows, EC LV -> mPFC
         if run.mpfc_assoc_hook is not None:
@@ -6143,6 +6158,7 @@ def run_consolidation(args, run):
                     run.mpfc_assoc_hook, run.eclv_module, run.mpfc_module,
                     t_swr_start = epoch_t0 + _ws,
                     t_swr_end   = epoch_t0 + _we,
+                    keep_strong = args.hebb_keep_strong,
                 )
 
         if run.n_epochs > 1:
