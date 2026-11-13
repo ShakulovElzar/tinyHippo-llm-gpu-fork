@@ -57,6 +57,7 @@ import argparse
 import sys
 import os
 import time
+import types
 import warnings
 from dataclasses import dataclass
 import numpy as np
@@ -5046,7 +5047,14 @@ def save_replay_hdf5(net, sim_ms, scale_label, outpath, bin_ms=10.0,
 # Main
 # ============================================================================
 
-if __name__ == "__main__":
+
+# ============================================================================
+# Command-line entry point, split into steps (see main())
+# ============================================================================
+
+def build_parser():
+    """All command-line flags. Every capability is opt-in; defaults reproduce the
+    validated configuration."""
     parser = argparse.ArgumentParser(
         description="Bidirectional hippocampal replay — Watson et al. 2025 (v4: EC LII module)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -5580,8 +5588,15 @@ Dentate gyrus (Phase 6.2):
              "alphas (restore checkpoint -> apply alpha -> run verification "
              "epoch -> record metrics). Saves ~10 hours of compute vs separate "
              "jobs. Overrides --homeo-alpha. Requires --homeostasis --stc.")
-    args = parser.parse_args()
-    sim.use(args.backend)
+    return parser
+
+
+def setup_run(args, parser, run):
+    """Check flag combinations, set global heterogeneity and the rhythm generator,
+    and size the network.
+
+    Sets on `run`: cfg (population sizes for --scale), n_threads, total_N,
+    n_groups (CA3 sequence groups = pattern slots)."""
 
     # Model-wide heterogeneity must be set BEFORE any Create/Connect call.
     _pick = lambda v: args.het if v is None else v
@@ -5676,38 +5691,43 @@ Dentate gyrus (Phase 6.2):
                       "scale, see build_dg_neurogenesis_hook), so without "
                       "--dg-neurogenesis there is nothing for it to update")
 
-    cfg = build_scale_config(args.scale, args.n_groups)
+    run.cfg = build_scale_config(args.scale, args.n_groups)
 
-    n_threads = (args.threads
+    run.n_threads = (args.threads
                  if args.threads is not None
-                 else int(os.environ.get("OMP_NUM_THREADS", cfg["n_threads_default"])))
+                 else int(os.environ.get("OMP_NUM_THREADS", run.cfg["n_threads_default"])))
 
-    total_N  = sum(cfg[k] for k in _REF_100PCT)
-    n_groups = cfg["n_seq_groups"]
+    run.total_N  = sum(run.cfg[k] for k in _REF_100PCT)
+    run.n_groups = run.cfg["n_seq_groups"]
 
-    # ---- CA3 pattern-completion probe (self-contained; exits after) ---------
+
+
+def run_pattern_completion_probe(args, parser, run):
+    """--pattern-completion only: a self-contained CA3 probe (intact vs ablated
+    recurrence). Writes its own HDF5 and exits the process. Does nothing
+    otherwise."""
     if args.pattern_completion:
         try:
             cue_fracs = [float(x) for x in args.pc_cue_fracs.split(",") if x.strip()]
         except ValueError:
             parser.error(f"--pc-cue-fracs must be comma-separated floats, "
                          f"got '{args.pc_cue_fracs}'")
-        if len(cue_fracs) + 2 > n_groups:
+        if len(cue_fracs) + 2 > run.n_groups:
             parser.error(f"--pattern-completion needs n_seq_groups >= "
                          f"{len(cue_fracs)+2} for {len(cue_fracs)} cue fractions "
-                         f"(scale {args.scale} gives {n_groups}); raise --scale "
+                         f"(scale {args.scale} gives {run.n_groups}); raise --scale "
                          f"or pass fewer --pc-cue-fracs.")
         print(f"\n{'='*72}")
-        print(f"  CA3 PATTERN COMPLETION probe  [{cfg['label']}]  "
+        print(f"  CA3 PATTERN COMPLETION probe  [{run.cfg['label']}]  "
               f"cue_fracs={cue_fracs}  cue_weight={args.pc_cue_weight}")
         print(f"{'='*72}")
         print(">>> Intact network (sup_local recurrence ON)...")
-        intact = run_pattern_completion(cfg, n_threads, cue_fracs,
+        intact = run_pattern_completion(run.cfg, run.n_threads, cue_fracs,
                                         ablate=False, cue_weight=args.pc_cue_weight,
                                         **({} if args.seed is None else
                                            dict(seed=args.seed, master_seed=args.seed)))
         print(">>> Ablated control (sup_local = 0)...")
-        ablated = run_pattern_completion(cfg, n_threads, cue_fracs,
+        ablated = run_pattern_completion(run.cfg, run.n_threads, cue_fracs,
                                          ablate=True, cue_weight=args.pc_cue_weight,
                                         **({} if args.seed is None else
                                            dict(seed=args.seed, master_seed=args.seed)))
@@ -5715,12 +5735,12 @@ Dentate gyrus (Phase 6.2):
 
         if _HDF5_AVAILABLE and _mpi_rank() == 0:
             import h5py, datetime
-            out_dir = f"replay_output_{args.scale}pct"
-            os.makedirs(out_dir, exist_ok=True)
-            pc_path = args.out_hdf5 or os.path.join(out_dir, "pattern_completion.h5")
+            run.out_dir = f"replay_output_{args.scale}pct"
+            os.makedirs(run.out_dir, exist_ok=True)
+            pc_path = args.out_hdf5 or os.path.join(run.out_dir, "pattern_completion.h5")
             with h5py.File(pc_path, "w") as h5:
                 h5.attrs["created_utc"] = datetime.datetime.utcnow().isoformat()
-                h5.attrs["scale"]       = cfg["label"]
+                h5.attrs["scale"]       = run.cfg["label"]
                 h5.attrs["cue_weight"]  = args.pc_cue_weight
                 for name, res in [("intact", intact), ("ablated", ablated)]:
                     g = h5.create_group(name)
@@ -5732,30 +5752,43 @@ Dentate gyrus (Phase 6.2):
             print(f"\n>>> Saved pattern-completion data -> {pc_path}")
         sys.exit(0)
 
+
+
+def build_model(args, run):
+    """Create every population and projection, then the plasticity hooks.
+
+    Order matters: the hippocampal core first (build_replay_network), then
+    EC LII, DG, EC LV and mPFC, and the hooks last, because NEST connection
+    handles become invalid after any later Connect().
+
+    Sets on `run`: net (core populations, SWR windows, pattern schedule),
+    ec_module, dg_module, eclv_module, mpfc_module, the hooks (stc_hook,
+    schaffer_hook, neurogenesis_hook, mpfc_assoc_hook, mpfc_rec_hook), and the
+    timing: SIM_MS (one epoch), n_epochs, total_sim_ms, swr_fwd, swr_rev, t_wall."""
     ec_lii_pct = args.ec_lii_scale if args.ec_lii_scale is not None else args.scale
     N_ec_lii   = _round_to_multiple(
         _REF_CORTEX["N_ec_lii"] * ec_lii_pct / 100.0,
-        n_groups,
+        run.n_groups,
     )
 
     # DG population sizes (Phase 6.2). Scaled by their own pct, rounded like the
     # cortex so hippocampal maths is untouched when --dg is absent.
     dg_pct = args.dg_scale if args.dg_scale is not None else args.scale
-    N_dg = {k: _round_to_multiple(v * dg_pct / 100.0, n_groups)
+    N_dg = {k: _round_to_multiple(v * dg_pct / 100.0, run.n_groups)
             for k, v in _REF_DG.items()}
 
     # Total simulation time: either single sim_ms OR n_swr × epoch_ms
-    SIM_MS       = args.sim_ms if not args.stc else args.epoch_ms
-    n_epochs     = args.n_swr if args.stc else 1
-    total_sim_ms = SIM_MS * n_epochs
+    run.SIM_MS       = args.sim_ms if not args.stc else args.epoch_ms
+    run.n_epochs     = args.n_swr if args.stc else 1
+    run.total_sim_ms = run.SIM_MS * run.n_epochs
 
     print(f"\n{'='*72}")
     print(f"  Watson et al. 2025 — Bidirectional Replay  [v10: Phase 3 EC-LV + mPFC loop]")
-    print(f"  Scale    : {cfg['label']}")
-    print(f"  CA3_SUP  : {cfg['N_ca3_sup']:>10,}  CA3_DEEP : {cfg['N_ca3_deep']:>8,}")
-    print(f"  CA1_PYR  : {cfg['N_ca1_pyr']:>10,}  groups   : {n_groups:>8,}  "
-          f"(CA3_SUP/group = {cfg['N_ca3_sup']//n_groups})")
-    print(f"  Total N  : {total_N:>10,}")
+    print(f"  Scale    : {run.cfg['label']}")
+    print(f"  CA3_SUP  : {run.cfg['N_ca3_sup']:>10,}  CA3_DEEP : {run.cfg['N_ca3_deep']:>8,}")
+    print(f"  CA1_PYR  : {run.cfg['N_ca1_pyr']:>10,}  groups   : {run.n_groups:>8,}  "
+          f"(CA3_SUP/group = {run.cfg['N_ca3_sup']//run.n_groups})")
+    print(f"  Total N  : {run.total_N:>10,}")
     if args.dg:
         print(f"  DG       : GC={N_dg['N_dg_gc']:>9,}  MC_low={N_dg['N_dg_mc_low']:,}  "
               f"MC_high={N_dg['N_dg_mc_high']:,}  BSK={N_dg['N_dg_basket']:,}  "
@@ -5764,31 +5797,31 @@ Dentate gyrus (Phase 6.2):
         print(f"  EC LII   : {N_ec_lii:>10,}  ({ec_lii_pct}% of 100k ref)  "
               f"K={args.ec_lii_k}  [--ec-lii]")
     if args.stc:
-        print(f"  STC hook : ENABLED  n_swr={n_epochs}  "
-              f"epoch={SIM_MS:.0f} ms  total={total_sim_ms:.0f} ms  [--stc]  "
+        print(f"  STC hook : ENABLED  n_swr={run.n_epochs}  "
+              f"epoch={run.SIM_MS:.0f} ms  total={run.total_sim_ms:.0f} ms  [--stc]  "
               f"PRP_threshold={args.prp_threshold}"
               + ("  [PHASE-5 FALSIFICATION: L-LTP blocked]" if args.prp_threshold > 100 else ""))
     if args.ec_lv:
         print(f"  EC LV    : ENABLED  [Phase 3 — closes hippocampo-cortical loop]")
     if args.mpfc:
         print(f"  mPFC     : ENABLED  [Phase 3 — cortical engram endpoint]")
-    print(f"  Threads  : {n_threads}  |  Sim: {total_sim_ms:.0f} ms")
+    print(f"  Threads  : {run.n_threads}  |  Sim: {run.total_sim_ms:.0f} ms")
     print(f"  Connect  : fixed_indegree + pairwise_bernoulli (C++, OpenMP)")
     print(f"{'='*72}\n")
 
-    t_wall = time.perf_counter()
+    run.t_wall = time.perf_counter()
 
     print(">>> Building hippocampal network...")
-    net = build_replay_network(
-        N_ca3_sup      = cfg["N_ca3_sup"],
-        N_ca3_deep     = cfg["N_ca3_deep"],
-        N_ca3_int_sup  = cfg["N_ca3_int_sup"],
-        N_ca3_int_deep = cfg["N_ca3_int_deep"],
-        N_ca1_pyr      = cfg["N_ca1_pyr"],
-        N_ca1_basket   = cfg["N_ca1_basket"],
-        N_ca1_olm      = cfg["N_ca1_olm"],
-        n_seq_groups   = cfg["n_seq_groups"],
-        n_threads      = n_threads,
+    run.net = build_replay_network(
+        N_ca3_sup      = run.cfg["N_ca3_sup"],
+        N_ca3_deep     = run.cfg["N_ca3_deep"],
+        N_ca3_int_sup  = run.cfg["N_ca3_int_sup"],
+        N_ca3_int_deep = run.cfg["N_ca3_int_deep"],
+        N_ca1_pyr      = run.cfg["N_ca1_pyr"],
+        N_ca1_basket   = run.cfg["N_ca1_basket"],
+        N_ca1_olm      = run.cfg["N_ca1_olm"],
+        n_seq_groups   = run.cfg["n_seq_groups"],
+        n_threads      = run.n_threads,
         suppress_dg_drive = args.dg,   # real DG mossy fibres replace the proxy
         theta_on       = not args.no_theta,
         ca3_drive_scale = args.ca3_drive_scale,
@@ -5796,8 +5829,8 @@ Dentate gyrus (Phase 6.2):
         n_patterns     = args.n_patterns,
         train_pattern  = args.train_pattern,
         pattern_source = args.pattern_source,
-        n_epochs       = n_epochs,
-        epoch_ms       = SIM_MS,
+        n_epochs       = run.n_epochs,
+        epoch_ms       = run.SIM_MS,
         delay_jitter   = args.delay_jitter,
         delay_jitter_wcomp = args.delay_jitter_wcomp,
         schaffer_k     = args.schaffer_k,
@@ -5807,7 +5840,7 @@ Dentate gyrus (Phase 6.2):
            dict(master_seed=args.seed, seed_connect=args.seed)),
     )
 
-    # ---- Phase 9: novel-pattern-held-back schedule (--novel-pattern-onset) --
+    # --- Novel pattern held back until an epoch (--novel-pattern-onset) ---
     # Overwrites net["epoch_pattern"] (NOT build_replay_network's internal
     # copy) so pattern_discrimination() -- which reads net["epoch_pattern"]
     # at call time, after the loop finishes -- groups epochs the same way
@@ -5820,22 +5853,22 @@ Dentate gyrus (Phase 6.2):
         onset  = args.novel_pattern_onset
         n_pat  = args.n_patterns
         novel_schedule = []
-        for ep in range(max(1, n_epochs)):
+        for ep in range(max(1, run.n_epochs)):
             if ep < onset:
                 novel_schedule.append(ep % (n_pat - 1))       # familiar only
             elif ep == onset:
                 novel_schedule.append(n_pat - 1)               # novel pattern's debut
             else:
                 novel_schedule.append((ep - onset - 1) % n_pat)  # resume full cycle
-        net["epoch_pattern"] = novel_schedule
+        run.net["epoch_pattern"] = novel_schedule
         print(f">>> Novel-pattern schedule: pattern {n_pat-1} held back until "
               f"epoch {onset}, then cycling normally: {novel_schedule}")
 
-    # ---- Optional Phase 1: EC LII/III ----------------------------------------
+    # --- EC LII/III (--ec-lii) ---
     # Built BEFORE the DG so its population can supply the perforant path and
     # close the EC->DG->CA3->CA1->EC loop. EC LII itself only needs CA1, which
     # build_replay_network has already created.
-    ec_module = None
+    run.ec_module = None
     # Place fields are drawn here, before build_ec_lii, so the EC LII group
     # labels (ec_lii_group_labels) can follow them in --pattern-source ec-lii.
     # They come from an independent numpy RNG (seed + 13), so drawing them
@@ -5846,23 +5879,23 @@ Dentate gyrus (Phase 6.2):
             (args.seed if args.seed is not None else 42) + 13)
         ec_field_centers = assign_place_fields(N_ec_lii, _pf_rng)
     if args.ec_lii:
-        ec_group_of = ec_lii_group_labels(N_ec_lii, net["n_seq_groups"],
-                                          max(1, net["n_patterns"]), ec_field_centers)
+        ec_group_of = ec_lii_group_labels(N_ec_lii, run.net["n_seq_groups"],
+                                          max(1, run.net["n_patterns"]), ec_field_centers)
         print(">>> Building EC LII/III module...")
-        ec_module = build_ec_lii(
-            ca1_pyr       = net["PYR"],
-            ca1_spike_rec = net["spk_pyr"],
+        run.ec_module = build_ec_lii(
+            ca1_pyr       = run.net["PYR"],
+            ca1_spike_rec = run.net["spk_pyr"],
             N_ec_lii      = N_ec_lii,
             K_ca1_ec      = args.ec_lii_k,
             delay_jitter  = args.delay_jitter,
             delay_jitter_wcomp = args.delay_jitter_wcomp,
             ca1_ec_group_frac = args.ca1_ec_group_frac,
-            n_groups      = net["n_seq_groups"],
+            n_groups      = run.net["n_seq_groups"],
             seed_connect  = (args.seed if args.seed is not None else 42),
             ec_group_of   = ec_group_of,
         )
 
-    # ---- Phase 7: encoding-direction pattern drive onto EC LII ---------------
+    # --- Pattern drive onto EC LII (--pattern-source ec-lii) ---
     # Only runs with --pattern-source ec-lii (validated above to require
     # --ec-lii). This is the counterpart of the CA3 trigger/scaffold inside
     # build_replay_network, just attached to EC LII instead and issued here
@@ -5871,22 +5904,22 @@ Dentate gyrus (Phase 6.2):
     # build_replay_network's trigger_on/scaffold_on gating.
     if args.pattern_source == "ec-lii":
         print(">>> Wiring encoding-direction place-field drive onto EC LII...")
-        n_pat = max(1, net["n_patterns"])
-        for ep in range(max(1, n_epochs)):
-            t0_ep = ep * SIM_MS
-            pat_idx = (net["epoch_pattern"][ep] if ep < len(net["epoch_pattern"])
+        n_pat = max(1, run.net["n_patterns"])
+        for ep in range(max(1, run.n_epochs)):
+            t0_ep = ep * run.SIM_MS
+            pat_idx = (run.net["epoch_pattern"][ep] if ep < len(run.net["epoch_pattern"])
                        else ep % n_pat)
             pattern_center = pat_idx / n_pat
-            f_s, r_s = t0_ep + net["swr_fwd"][0], t0_ep + net["swr_rev"][0]
-            f_dur = net["swr_fwd"][1] - net["swr_fwd"][0]
-            r_dur = net["swr_rev"][1] - net["swr_rev"][0]
+            f_s, r_s = t0_ep + run.net["swr_fwd"][0], t0_ep + run.net["swr_rev"][0]
+            f_dur = run.net["swr_fwd"][1] - run.net["swr_fwd"][0]
+            r_dur = run.net["swr_rev"][1] - run.net["swr_rev"][0]
             make_place_field_drive(
-                ec_module.population, ec_field_centers, pattern_center,
+                run.ec_module.population, ec_field_centers, pattern_center,
                 args.place_field_sigma, f_s, f_dur,
                 args.ec_pattern_base_rate, args.ec_pattern_peak_rate,
                 weight=args.ec_pattern_weight)
             make_place_field_drive(
-                ec_module.population, ec_field_centers, pattern_center,
+                run.ec_module.population, ec_field_centers, pattern_center,
                 args.place_field_sigma, r_s, r_dur,
                 args.ec_pattern_base_rate, args.ec_pattern_peak_rate,
                 weight=args.ec_pattern_weight)
@@ -5895,26 +5928,26 @@ Dentate gyrus (Phase 6.2):
               f"peak={args.ec_pattern_peak_rate} Hz  ** CA3 gets no direct "
               f"injection in this mode **")
 
-    # ---- Direct EC LII -> CA3 perforant path (RESULTS.md SS30) -------------
+    # --- Direct EC LII -> CA3 perforant path (--ec-ca3-k, RESULTS.md §30) ---
     # Biology: EC layer II projects to DG AND directly to CA3 (~3,600 inputs per
     # rat CA3 cell vs ~12,000 recurrent and ~46 mossy; Treves & Rolls 1992,
     # Rolls 2007), and is proposed to carry the recall cue. Absent from the
     # model until now. Off unless --ec-ca3-k > 0, so older builds are unchanged.
-    if ec_module is not None and args.ec_ca3_k > 0:
-        G_ = net["n_seq_groups"]
-        for _tgt, _gs, _name, _off in [(net["CA3_SUP"], len(net["ca3_sup_groups"][0]), "SUP", 29),
-                                       (net["CA3_DEEP"], len(net["ca3_deep_groups"][0]), "DEEP", 31)]:
+    if run.ec_module is not None and args.ec_ca3_k > 0:
+        G_ = run.net["n_seq_groups"]
+        for _tgt, _gs, _name, _off in [(run.net["CA3_SUP"], len(run.net["ca3_sup_groups"][0]), "SUP", 29),
+                                       (run.net["CA3_DEEP"], len(run.net["ca3_deep_groups"][0]), "DEEP", 31)]:
             _K = min(args.ec_ca3_k, N_ec_lii)
             t_c = time.perf_counter()
             if args.ec_ca3_group_frac > 0:
                 grouped_fixed_connect(
-                    ec_module.population, _tgt, _K, args.ec_ca3_w, args.ec_ca3_delay,
+                    run.ec_module.population, _tgt, _K, args.ec_ca3_w, args.ec_ca3_delay,
                     G_, args.ec_ca3_group_frac, w_cv=0.0, compensate=False,
                     seed=(args.seed if args.seed is not None else 42) + _off,
-                    pre_group_of=ec_module.group_of,
+                    pre_group_of=run.ec_module.group_of,
                     post_group_of=np.minimum(np.arange(len(_tgt)) // _gs, G_ - 1))
             else:
-                sim.Connect(ec_module.population, _tgt,
+                sim.Connect(run.ec_module.population, _tgt,
                              conn_spec={"rule": "fixed_indegree", "indegree": _K},
                              syn_spec={"synapse_model": "static_synapse",
                                        "weight": float(args.ec_ca3_w),
@@ -5923,24 +5956,24 @@ Dentate gyrus (Phase 6.2):
                   f"delay={args.ec_ca3_delay} ms group_frac={args.ec_ca3_group_frac} "
                   f"({len(_tgt) * _K:,} synapses, {time.perf_counter() - t_c:.1f}s)")
 
-    # ---- Phase C step 2: Schaffer STDP --------------------------------------
-    schaffer_hook = None
+    # --- Schaffer collateral STDP (--schaffer-stdp) ---
+    run.schaffer_hook = None
     if args.schaffer_stdp:
-        schaffer_hook = build_schaffer_stdp_hook(net)
+        run.schaffer_hook = build_schaffer_stdp_hook(run.net)
 
-    # ---- Optional Phase 6.2: dentate gyrus -----------------------------------
-    dg_module = None
+    # --- Dentate gyrus (--dg) ---
+    run.dg_module = None
     if args.dg:
         print(">>> Building dentate gyrus module (Phase 6.2)...")
-        dg_module = build_dg_module(
-            ca3_sup   = net["CA3_SUP"],
-            ca3_deep  = net["CA3_DEEP"],
+        run.dg_module = build_dg_module(
+            ca3_sup   = run.net["CA3_SUP"],
+            ca3_deep  = run.net["CA3_DEEP"],
             N_gc      = N_dg["N_dg_gc"],
             N_mc_low  = N_dg["N_dg_mc_low"],
             N_mc_high = N_dg["N_dg_mc_high"],
             N_basket  = N_dg["N_dg_basket"],
-            ec_lii    = (ec_module.population
-                         if (ec_module is not None and not args.no_ec_dg_loop)
+            ec_lii    = (run.ec_module.population
+                         if (run.ec_module is not None and not args.no_ec_dg_loop)
                          else None),
             w_ec_dg      = args.w_ec_dg,
             pp_residual  = args.pp_residual,
@@ -5949,28 +5982,22 @@ Dentate gyrus (Phase 6.2):
             ec_field_centers    = ec_field_centers,
             dg_ec_cluster_sigma = args.dg_ec_cluster_sigma,
             mf_group_frac = args.mf_group_frac,
-            n_seq_groups  = net["n_seq_groups"],
-            n_patterns    = max(1, net["n_patterns"]),
-            # Was hardcoded to the default (42) regardless of --seed, so
-            # every run drew the IDENTICAL granule-cell V_m/Poisson-residual
-            # heterogeneity -- confirmed 2026-09-05 (jobs 45358807/45358815,
-            # different --seed) via 66% overlap in DG's "always-on" cells
-            # between the two runs, versus ~8 expected by chance. Threaded
-            # through now so at least this bias varies by --seed; see
-            # run_dg_residual_refresh_hook for the deeper per-epoch fix.
+            n_seq_groups  = run.net["n_seq_groups"],
+            n_patterns    = max(1, run.net["n_patterns"]),
+            # follows --seed, so the granule-cell heterogeneity differs between seeds
             seed_connect = (args.seed if args.seed is not None else 42),
         )
 
-    # ---- Optional Phase 8: DG neurogenesis -----------------------------------
+    # --- DG neurogenesis (--dg-neurogenesis) ---
     # --dg-perforant-stdp requires --dg-neurogenesis (validated above): Phase
     # 10 plasticity only ever applies to neurogenesis cohorts, so the hook is
     # only needed when neurogenesis itself is on.
-    neurogenesis_hook = None
+    run.neurogenesis_hook = None
     if args.dg_neurogenesis:
         print(">>> Initialising DG neurogenesis hook (Phase 8) / "
               "perforant-path plasticity (Phase 10)...")
-        neurogenesis_hook = build_dg_neurogenesis_hook(
-            dg_module, ec_module.population, net["CA3_SUP"], net["CA3_DEEP"],
+        run.neurogenesis_hook = build_dg_neurogenesis_hook(
+            run.dg_module, run.ec_module.population, run.net["CA3_SUP"], run.net["CA3_DEEP"],
             maturation_epochs = args.neurogenesis_maturation_epochs,
             young_ie          = args.neurogenesis_young_ie,
             young_inhib_scale = args.neurogenesis_young_inhib_scale,
@@ -5979,31 +6006,29 @@ Dentate gyrus (Phase 6.2):
             **({} if args.seed is None else dict(seed=args.seed)),
         )
 
-    # ---- Optional Phase 3: EC Layer V + mPFC ---------------------------------
+    # --- EC LV and mPFC (--ec-lv, --mpfc) ---
     # Built BEFORE the plasticity hooks: nest.GetConnections() descriptors are
-    # invalidated by any later Connect(), and NEST warns about exactly that.
-    # (Previously build_stc_hook ran first and its cached CA1->EC collection was
-    # invalidated by these two builds.)
-    eclv_module  = None
-    mpfc_module  = None
-    if args.ec_lv and ec_module is not None:
+    # invalidated by any later Connect().
+    run.eclv_module  = None
+    run.mpfc_module  = None
+    if args.ec_lv and run.ec_module is not None:
         print(">>> Building EC Layer V module (Phase 3)...")
-        eclv_module = build_ec_lv(
-            ca1_pyr    = net["PYR"],
-            ec_lii_pop = ec_module.population,
-            ca3_sup    = net["CA3_SUP"],
+        run.eclv_module = build_ec_lv(
+            ca1_pyr    = run.net["PYR"],
+            ec_lii_pop = run.ec_module.population,
+            ca3_sup    = run.net["CA3_SUP"],
             delay_jitter = args.delay_jitter,
             delay_jitter_wcomp = args.delay_jitter_wcomp,
             group_frac = args.cortex_group_frac,
-            n_groups   = net["n_seq_groups"],
+            n_groups   = run.net["n_seq_groups"],
             seed_connect = (args.seed if args.seed is not None else 42),
-            lii_group_of = ec_module.group_of,
+            lii_group_of = run.ec_module.group_of,
             ie_shift   = args.ec_lv_ie_shift,
         )
         if args.mpfc:
             print(">>> Building mPFC module (Phase 3)...")
-            mpfc_module = build_mpfc(
-                ec_lv_pop = eclv_module.population,
+            run.mpfc_module = build_mpfc(
+                ec_lv_pop = run.eclv_module.population,
                 lateral_inhibition = not args.no_mpfc_lateral_inh,
                 recurrent = args.cortical_recall,
                 K_rec = args.mpfc_k_rec,
@@ -6011,103 +6036,100 @@ Dentate gyrus (Phase 6.2):
                 delay_jitter = args.delay_jitter,
                 delay_jitter_wcomp = args.delay_jitter_wcomp,
                 group_frac = args.cortex_group_frac,
-                n_groups   = net["n_seq_groups"],
+                n_groups   = run.net["n_seq_groups"],
                 seed_connect = (args.seed if args.seed is not None else 42),
                 w_eclv_mpfc = args.w_eclv_mpfc,
                 N_mpfc = args.n_mpfc,
                 w_mpfc_ei = args.mpfc_w_ei,
             )
 
-    if args.ec_lii_ff_inhib is not None and ec_module is not None:
-        build_ff_inhibition(ec_module, net["PYR"], args.ec_lii_ff_inhib,
+    if args.ec_lii_ff_inhib is not None and run.ec_module is not None:
+        build_ff_inhibition(run.ec_module, run.net["PYR"], args.ec_lii_ff_inhib,
                             seed=(args.seed if args.seed is not None else 42) + 91)
-    if args.ec_lv_ff_inhib is not None and eclv_module is not None:
-        build_ff_inhibition(eclv_module, net["PYR"], args.ec_lv_ff_inhib,
+    if args.ec_lv_ff_inhib is not None and run.eclv_module is not None:
+        build_ff_inhibition(run.eclv_module, run.net["PYR"], args.ec_lv_ff_inhib,
                             seed=(args.seed if args.seed is not None else 42) + 92, label="EC LV")
 
-    # ---- Plasticity hooks: after ALL populations are wired -------------------
-    stc_hook = None
-    if args.stc and ec_module is not None:
+    # --- Plasticity hooks: only after ALL populations are wired ---
+    run.stc_hook = None
+    if args.stc and run.ec_module is not None:
         print(">>> Initialising STC hook (Phase 2)...")
-        stc_hook = build_stc_hook(ec_module)
+        run.stc_hook = build_stc_hook(run.ec_module)
 
-    mpfc_assoc_hook = None
-    mpfc_rec_hook   = None
-    if mpfc_module is not None and eclv_module is not None and not args.no_mpfc_assoc:
+    run.mpfc_assoc_hook = None
+    run.mpfc_rec_hook   = None
+    if run.mpfc_module is not None and run.eclv_module is not None and not args.no_mpfc_assoc:
         print(">>> Initialising mPFC association hook...")
-        mpfc_assoc_hook = build_mpfc_assoc_hook(mpfc_module, eclv_module)
+        run.mpfc_assoc_hook = build_mpfc_assoc_hook(run.mpfc_module, run.eclv_module)
         if args.cortical_recall:
             # the recurrent collaterals are what a hippocampus-independent
             # memory is actually stored in, so they must learn too
-            mpfc_rec_hook = build_mpfc_recurrent_hook(mpfc_module)
+            run.mpfc_rec_hook = build_mpfc_recurrent_hook(run.mpfc_module)
 
-    # ---- Simulation: single epoch or multi-epoch STC loop -------------------
-    swr_fwd = net["swr_fwd"]
-    swr_rev = net["swr_rev"]
 
-    print(f"\n>>> Simulating {n_epochs} epoch(s) × {SIM_MS:.0f} ms "
-          f"= {total_sim_ms:.0f} ms total...")
+
+def run_consolidation(args, run):
+    """The "sleep": n_epochs epochs of SWR replay. After each epoch the plasticity
+    hooks update weights from the spikes inside the two SWR windows (forward and
+    reverse): STC on CA1 -> EC, EC LV -> mPFC and mPFC -> mPFC Hebbian learning,
+    and the optional DG and Schaffer rules."""
+    run.swr_fwd = run.net["swr_fwd"]
+    run.swr_rev = run.net["swr_rev"]
+
+    print(f"\n>>> Simulating {run.n_epochs} epoch(s) × {run.SIM_MS:.0f} ms "
+          f"= {run.total_sim_ms:.0f} ms total...")
     t_sim = time.perf_counter()
 
     dg_residual_rng = (np.random.default_rng((args.seed if args.seed is not None else 42) + 61)
-                        if dg_module is not None else None)
-    for epoch in range(n_epochs):
-        epoch_t0 = epoch * SIM_MS
-        if dg_module is not None:
-            # Re-randomize the original population's Poisson-residual rates
-            # every epoch -- see run_dg_residual_refresh_hook's docstring for
-            # why a fixed per-cell draw was silently defeating every DG
-            # pattern-separation mechanism tried so far.
-            run_dg_residual_refresh_hook(dg_module, dg_residual_rng)
-        if neurogenesis_hook is not None and args.dg_neurogenesis:
-            run_dg_neurogenesis_hook(neurogenesis_hook, dg_module, epoch,
+                        if run.dg_module is not None else None)
+    for epoch in range(run.n_epochs):
+        epoch_t0 = epoch * run.SIM_MS
+        if run.dg_module is not None:
+            # new per-cell residual rates every epoch (a fixed draw defeats
+            # DG pattern separation; see run_dg_residual_refresh_hook)
+            run_dg_residual_refresh_hook(run.dg_module, dg_residual_rng)
+        if run.neurogenesis_hook is not None and args.dg_neurogenesis:
+            run_dg_neurogenesis_hook(run.neurogenesis_hook, run.dg_module, epoch,
                                      args.neurogenesis_rate)
-        sim.Simulate(SIM_MS)
+        sim.Simulate(run.SIM_MS)
 
-        # Phase 10: DG perforant-path Hebbian learning, same two SWR windows
-        # as every other plasticity hook. Runs whenever the hook exists (i.e.
-        # --dg-neurogenesis + --dg-perforant-stdp were given) -- plasticity
-        # applies only to neurogenesis cohorts, not the original population
-        # (see build_dg_neurogenesis_hook's docstring for why), with young
-        # cohorts getting a learning-rate boost while inside their
-        # maturation window.
-        if neurogenesis_hook is not None and args.dg_perforant_stdp:
-            for _ws, _we in ((swr_fwd[0], swr_fwd[1]), (swr_rev[0], swr_rev[1])):
+        # DG perforant-path Hebbian learning (--dg-perforant-stdp): only the
+        # neurogenesis cohorts learn, young ones faster.
+        if run.neurogenesis_hook is not None and args.dg_perforant_stdp:
+            for _ws, _we in ((run.swr_fwd[0], run.swr_fwd[1]), (run.swr_rev[0], run.swr_rev[1])):
                 run_dg_perforant_plasticity_hook(
-                    neurogenesis_hook, dg_module, ec_module,
+                    run.neurogenesis_hook, run.dg_module, run.ec_module,
                     t_swr_start=epoch_t0 + _ws, t_swr_end=epoch_t0 + _we,
                     epoch=epoch,
                     A_assoc=args.dg_assoc_a, A_hetero=args.dg_assoc_a_hetero,
                     w_max=args.dg_assoc_w_max, w_min=args.dg_assoc_w_min,
                 )
 
-        if stc_hook is not None:
-            current_t = epoch_t0 + SIM_MS
-            # Run STC hook for the forward SWR event in this epoch
+        if run.stc_hook is not None:
+            current_t = epoch_t0 + run.SIM_MS
             run_stc_hook(
-                stc_hook, ec_module,
-                t_swr_start   = epoch_t0 + swr_fwd[0],
-                t_swr_end     = epoch_t0 + swr_fwd[1],
+                run.stc_hook, run.ec_module,
+                t_swr_start   = epoch_t0 + run.swr_fwd[0],
+                t_swr_end     = epoch_t0 + run.swr_fwd[1],
                 current_t_ms  = current_t,
                 PRP_threshold = args.prp_threshold,
             )
-            # Run STC hook for the reverse SWR event
             run_stc_hook(
-                stc_hook, ec_module,
-                t_swr_start   = epoch_t0 + swr_rev[0],
-                t_swr_end     = epoch_t0 + swr_rev[1],
+                run.stc_hook, run.ec_module,
+                t_swr_start   = epoch_t0 + run.swr_rev[0],
+                t_swr_end     = epoch_t0 + run.swr_rev[1],
                 current_t_ms  = current_t,
                 PRP_threshold = args.prp_threshold,
             )
 
-        if schaffer_hook is not None:
-            for _ws, _we in ((swr_fwd[0], swr_fwd[1]), (swr_rev[0], swr_rev[1])):
-                run_schaffer_stdp_hook(schaffer_hook, net,
+        if run.schaffer_hook is not None:
+            for _ws, _we in ((run.swr_fwd[0], run.swr_fwd[1]), (run.swr_rev[0], run.swr_rev[1])):
+                run_schaffer_stdp_hook(run.schaffer_hook, run.net,
                                        epoch_t0 + _ws, epoch_t0 + _we)
 
-        if mpfc_rec_hook is not None:
-            for _ws, _we in ((swr_fwd[0], swr_fwd[1]), (swr_rev[0], swr_rev[1])):
-                run_mpfc_assoc_hook(mpfc_rec_hook, mpfc_module, mpfc_module,
+        if run.mpfc_rec_hook is not None:
+            for _ws, _we in ((run.swr_fwd[0], run.swr_fwd[1]), (run.swr_rev[0], run.swr_rev[1])):
+                run_mpfc_assoc_hook(run.mpfc_rec_hook, run.mpfc_module, run.mpfc_module,
                                     t_swr_start=epoch_t0 + _ws,
                                     t_swr_end=epoch_t0 + _we,
                                     A_assoc=args.mpfc_rec_a,
@@ -6115,43 +6137,53 @@ Dentate gyrus (Phase 6.2):
                                     w_max=args.mpfc_rec_wmax)
 
         # Cortical association build-up: same two SWR windows, EC LV -> mPFC
-        if mpfc_assoc_hook is not None:
-            for _ws, _we in ((swr_fwd[0], swr_fwd[1]), (swr_rev[0], swr_rev[1])):
+        if run.mpfc_assoc_hook is not None:
+            for _ws, _we in ((run.swr_fwd[0], run.swr_fwd[1]), (run.swr_rev[0], run.swr_rev[1])):
                 run_mpfc_assoc_hook(
-                    mpfc_assoc_hook, eclv_module, mpfc_module,
+                    run.mpfc_assoc_hook, run.eclv_module, run.mpfc_module,
                     t_swr_start = epoch_t0 + _ws,
                     t_swr_end   = epoch_t0 + _we,
                 )
 
-        if n_epochs > 1:
-            print(f"    Epoch {epoch+1}/{n_epochs} done "
+        if run.n_epochs > 1:
+            print(f"    Epoch {epoch+1}/{run.n_epochs} done "
                   f"({time.perf_counter()-t_sim:.1f}s elapsed)")
 
     print(f"    Total simulation done in {time.perf_counter()-t_sim:.1f}s")
 
-    # ---- Test 3: hippocampus-independent cortical recall --------------------
-    if args.cortical_recall and mpfc_module is not None:
+
+
+def run_cortical_recall(args, run):
+    """--cortical-recall only: the remote-memory test.
+
+    1. The cortical assembly = mPFC cells active during replay.
+    2. Lesion: CA1 -> cortex weights are zeroed.
+    3. mPFC is held near threshold by a subthreshold Poisson drive.
+    4. A partial cue (--cr-cue-frac) of the assembly; completion is scored.
+    5. Gate G2 (n_patterns > 1): does a cue of pattern p reactivate p's assembly
+       more than the others?"""
+    if args.cortical_recall and run.mpfc_module is not None:
         print(f"\n{'='*72}")
         print("CORTICAL RECALL AFTER HIPPOCAMPAL LESION (Test 3)")
         print(f"{'='*72}")
-        _t_all = total_sim_ms
+        _t_all = run.total_sim_ms
 
         # 1. the cortical assembly = mPFC cells the consolidated pattern drives
-        _ev = sim.GetStatus(mpfc_module.spike_rec, "events")[0]
+        _ev = sim.GetStatus(run.mpfc_module.spike_rec, "events")[0]
         _t, _s = np.asarray(_ev["times"]), np.asarray(_ev["senders"])
         _m = np.zeros(len(_t), dtype=bool)
-        for _e in range(n_epochs):
-            _o = _e * SIM_MS
-            _m |= (((_t >= _o + swr_fwd[0]) & (_t <= _o + swr_fwd[1])) |
-                   ((_t >= _o + swr_rev[0]) & (_t <= _o + swr_rev[1])))
+        for _e in range(run.n_epochs):
+            _o = _e * run.SIM_MS
+            _m |= (((_t >= _o + run.swr_fwd[0]) & (_t <= _o + run.swr_fwd[1])) |
+                   ((_t >= _o + run.swr_rev[0]) & (_t <= _o + run.swr_rev[1])))
         _assembly = np.unique(_s[_m])
-        print(f"  cortical assembly: {len(_assembly)}/{mpfc_module.N} mPFC cells "
+        print(f"  cortical assembly: {len(_assembly)}/{run.mpfc_module.N} mPFC cells "
               f"active during replay")
         if len(_assembly) < 8:
             print("  [SKIP] assembly too small to cue and score")
         else:
             # 2. lesion: hippocampal output to cortex is severed
-            lesion_hippocampus(net, ec_module, eclv_module, stc=stc_hook)
+            lesion_hippocampus(run.net, run.ec_module, run.eclv_module, stc=run.stc_hook)
             # 3. tonic priming. After the lesion mPFC has NO input at all -- EC
             # LV is silent, so the only remaining excitation is the recurrent
             # collaterals, which cannot start from nothing. The CA3 completion
@@ -6162,9 +6194,9 @@ Dentate gyrus (Phase 6.2):
             # threshold, it does not fire them (verified by the pre-cue
             # baseline, which must stay ~0).
             if args.cr_prime_rate > 0:
-                _pg = sim.Create("poisson_generator", mpfc_module.N,
+                _pg = sim.Create("poisson_generator", run.mpfc_module.N,
                                   params={"rate": float(args.cr_prime_rate)})
-                sim.Connect(_pg, mpfc_module.population, conn_spec="one_to_one",
+                sim.Connect(_pg, run.mpfc_module.population, conn_spec="one_to_one",
                              syn_spec={"weight": float(args.cr_prime_weight),
                                        "delay": 1.0})
                 print(f"  [prime] mPFC tonic drive {args.cr_prime_rate:.0f} Hz "
@@ -6172,10 +6204,10 @@ Dentate gyrus (Phase 6.2):
             # 3. partial cue, well clear of the last replay
             _cue_t = _t_all + 200.0
             _cued, _un = cortical_recall_probe(
-                mpfc_module, _assembly, args.cr_cue_frac, _cue_t,
+                run.mpfc_module, _assembly, args.cr_cue_frac, _cue_t,
                 rng=np.random.default_rng(7))
             sim.Simulate(500.0)
-            _ev2 = sim.GetStatus(mpfc_module.spike_rec, "events")[0]
+            _ev2 = sim.GetStatus(run.mpfc_module.spike_rec, "events")[0]
             _t2, _s2 = np.asarray(_ev2["times"]), np.asarray(_ev2["senders"])
             _r = completion_index(_t2, _s2, _cued, _un, _cue_t, _cue_t + 80.0)
             # baseline: an equal window BEFORE the cue, post-lesion, no stimulus
@@ -6197,23 +6229,23 @@ Dentate gyrus (Phase 6.2):
 
             # 4. Gate G2: pattern-specific recall (RESULTS.md SS33). Only
             # meaningful with more than one pattern.
-            if net["n_patterns"] > 1:
+            if run.net["n_patterns"] > 1:
                 _g2 = pattern_recall_specificity(
-                    mpfc_module, net["epoch_pattern"], n_epochs, SIM_MS,
-                    [swr_fwd, swr_rev],
+                    run.mpfc_module, run.net["epoch_pattern"], run.n_epochs, run.SIM_MS,
+                    [run.swr_fwd, run.swr_rev],
                     t_start=float(sim.GetKernelStatus("biological_time")) + 300.0,
-                    n_patterns=net["n_patterns"], cue_frac=args.cr_cue_frac,
+                    n_patterns=run.net["n_patterns"], cue_frac=args.cr_cue_frac,
                     trials_per_pattern=args.g2_trials, iti_ms=args.g2_iti)
-                net["g2_recall"] = _g2
+                run.net["g2_recall"] = _g2
                 print(f"\n  --- G2: pattern-specific cortical recall after the lesion ---")
                 if not _g2["ok"]:
                     print(f"  [SKIP] {_g2['reason']}")
                 else:
-                    print(f"  assemblies: {net['n_patterns']} x {_g2['assembly_size']} mPFC cells "
+                    print(f"  assemblies: {run.net['n_patterns']} x {_g2['assembly_size']} mPFC cells "
                           f"(functional, from the consolidation run)")
                     print(f"  cue {args.cr_cue_frac*100:.0f}% of one assembly per trial, "
                           f"{len(_g2['order'])} trials; cue_recall {_g2['cue_recall'].mean():.2f}")
-                    for _q in range(net["n_patterns"]):
+                    for _q in range(run.net["n_patterns"]):
                         _k = _g2["order"] == _q
                         _row = _g2["responses"][_k].mean(0)
                         print(f"  cue pattern {_q}: responses per assembly "
@@ -6226,15 +6258,19 @@ Dentate gyrus (Phase 6.2):
                           else "  [FLAG] G2 not met (needs specificity > 0 at p < 0.01)")
         print(f"{'='*72}")
 
-    # ---- Phase 4: Synaptic Homeostasis (after all SWR epochs) ---------------
-    # Supports both single-alpha (--homeo-alpha) and sweep (--alpha-sweep) modes.
-    # In sweep mode: scan CA3 incoming connections ONCE, checkpoint post-
-    # consolidation weights, then for each alpha: restore -> apply -> verify.
-    # This avoids redundant build + 14-epoch consolidation for each alpha,
-    # saving ~4-5 hours per additional alpha vs separate SLURM jobs.
-    homeo_results = {}    # alpha (float) -> stats dict
+
+
+def run_homeostasis(args, run):
+    """--homeostasis only: sleep downscaling of CA3 recurrent weights after
+    consolidation, then a verification epoch per alpha.
+
+    Sets on `run`: homeo_results, homeo_stats; extends total_sim_ms."""
+    # One alpha (--homeo-alpha) or a sweep (--alpha-sweep): scan the CA3
+    # synapses once, checkpoint the consolidated weights, then per alpha
+    # restore -> downscale -> one verification epoch.
+    run.homeo_results = {}    # alpha (float) -> stats dict
     homeo         = None
-    if args.homeostasis and stc_hook is not None:
+    if args.homeostasis and run.stc_hook is not None:
         n_sweep = len(args.alpha_list)
         sweep_label = "alpha-sweep" if n_sweep > 1 else "single-alpha"
         print(f"\n>>> Phase 4: Synaptic homeostasis ({sweep_label}, "
@@ -6242,7 +6278,7 @@ Dentate gyrus (Phase 6.2):
 
         # Build hook ONCE: this is the expensive GetConnections(target=CA3_SUP) scan.
         # Use the first alpha as a placeholder; we override it inside the loop.
-        homeo = build_homeostasis_hook(net, alpha=args.alpha_list[0])
+        homeo = build_homeostasis_hook(run.net, alpha=args.alpha_list[0])
 
         # Checkpoint: snapshot post-consolidation CA3 recurrent weights so we
         # can restore them between alpha iterations (otherwise alphas compound).
@@ -6259,83 +6295,87 @@ Dentate gyrus (Phase 6.2):
             homeo.weights_pre[:] = ca3_weights_checkpoint
             homeo.alpha         = alpha_val
 
-            # Apply downscaling
             stats = run_homeostasis_hook(homeo)
 
             # Verification epoch: SIM_MS of additional simulation post-downscaling.
             # Each iteration extends total simulation by SIM_MS; SWR generators
             # already fired during epoch 1, so the verification window picks up
             # CA3 attractor dynamics under the downscaled weights.
-            print(f"  [homeo] Running verification epoch ({SIM_MS:.0f} ms)...")
+            print(f"  [homeo] Running verification epoch ({run.SIM_MS:.0f} ms)...")
             t_verify = time.perf_counter()
-            sim.Simulate(SIM_MS)
+            sim.Simulate(run.SIM_MS)
 
             # Verification epoch global start time = consolidation total + prior verifications
-            epoch_t0_verify = (n_epochs + sweep_idx) * SIM_MS
+            epoch_t0_verify = (run.n_epochs + sweep_idx) * run.SIM_MS
 
             # Continue STC bookkeeping (writes are no-ops for already-LLTP synapses)
             run_stc_hook(
-                stc_hook, ec_module,
-                t_swr_start   = epoch_t0_verify + swr_fwd[0],
-                t_swr_end     = epoch_t0_verify + swr_fwd[1],
-                current_t_ms  = epoch_t0_verify + SIM_MS,
+                run.stc_hook, run.ec_module,
+                t_swr_start   = epoch_t0_verify + run.swr_fwd[0],
+                t_swr_end     = epoch_t0_verify + run.swr_fwd[1],
+                current_t_ms  = epoch_t0_verify + run.SIM_MS,
                 PRP_threshold = args.prp_threshold,
             )
             run_stc_hook(
-                stc_hook, ec_module,
-                t_swr_start   = epoch_t0_verify + swr_rev[0],
-                t_swr_end     = epoch_t0_verify + swr_rev[1],
-                current_t_ms  = epoch_t0_verify + SIM_MS,
+                run.stc_hook, run.ec_module,
+                t_swr_start   = epoch_t0_verify + run.swr_rev[0],
+                t_swr_end     = epoch_t0_verify + run.swr_rev[1],
+                current_t_ms  = epoch_t0_verify + run.SIM_MS,
                 PRP_threshold = args.prp_threshold,
             )
             print(f"    Verification epoch done in {time.perf_counter()-t_verify:.1f}s")
 
             # Measure replay quality on this verification epoch's SWR windows
             from simbackend import GetStatus as _gs
-            _ev3 = _gs(net["spk_ca3_sup"], "events")[0]
+            _ev3 = _gs(run.net["spk_ca3_sup"], "events")[0]
             _t3  = np.array(_ev3["times"],   dtype=float)
             _s3  = np.array(_ev3["senders"], dtype=int)
-            _rho_f, _pf = replay_score(_t3, _s3, net["ca3_seq_groups"],
-                                        epoch_t0_verify + swr_fwd[0],
-                                        epoch_t0_verify + swr_fwd[1])
-            _rho_r, _pr = replay_score(_t3, _s3, net["ca3_seq_groups"],
-                                        epoch_t0_verify + swr_rev[0],
-                                        epoch_t0_verify + swr_rev[1])
+            _rho_f, _pf = replay_score(_t3, _s3, run.net["ca3_seq_groups"],
+                                        epoch_t0_verify + run.swr_fwd[0],
+                                        epoch_t0_verify + run.swr_fwd[1])
+            _rho_r, _pr = replay_score(_t3, _s3, run.net["ca3_seq_groups"],
+                                        epoch_t0_verify + run.swr_rev[0],
+                                        epoch_t0_verify + run.swr_rev[1])
             stats["rho_fwd_post_homeo"] = float(_rho_f) if _rho_f is not None else float("nan")
             stats["rho_rev_post_homeo"] = float(_rho_r) if _rho_r is not None else float("nan")
             stats["verification_t0_ms"] = float(epoch_t0_verify)
-            stats["verification_t1_ms"] = float(epoch_t0_verify + SIM_MS)
+            stats["verification_t1_ms"] = float(epoch_t0_verify + run.SIM_MS)
 
             print(f"  [homeo] alpha={alpha_val:.2f}:  "
                   f"rho_fwd={stats['rho_fwd_post_homeo']:+.3f}  "
                   f"rho_rev={stats['rho_rev_post_homeo']:+.3f}  "
-                  f"EC L-LTP w_mean={float(stc_hook.w[stc_hook.plastic].mean()):.4f}")
+                  f"EC L-LTP w_mean={float(run.stc_hook.w[run.stc_hook.plastic].mean()):.4f}")
 
-            homeo_results[alpha_val] = stats
-            total_sim_ms += SIM_MS
+            run.homeo_results[alpha_val] = stats
+            run.total_sim_ms += run.SIM_MS
 
-        # Backwards-compatible alias for single-alpha downstream code
-        homeo_stats        = homeo_results[args.alpha_list[0]] if n_sweep == 1 else None
-        homeo_post_rho_fwd = (homeo_stats["rho_fwd_post_homeo"]
-                              if homeo_stats is not None else None)
-        homeo_post_rho_rev = (homeo_stats["rho_rev_post_homeo"]
-                              if homeo_stats is not None else None)
+        run.homeo_stats        = run.homeo_results[args.alpha_list[0]] if n_sweep == 1 else None
+        homeo_post_rho_fwd = (run.homeo_stats["rho_fwd_post_homeo"]
+                              if run.homeo_stats is not None else None)
+        homeo_post_rho_rev = (run.homeo_stats["rho_rev_post_homeo"]
+                              if run.homeo_stats is not None else None)
     else:
-        homeo_stats        = None
+        run.homeo_stats        = None
         homeo_post_rho_fwd = None
         homeo_post_rho_rev = None
 
+
+
+def export_results(args, run):
+    """Write the HDF5 file (spikes, rates, per-capability metrics), print the
+    pattern-discrimination and consolidation summaries, and draw figures unless
+    --no-figures."""
     rank = _mpi_rank()
 
-    # ---- HDF5 export ---------------------------------------------------------
+    # --- HDF5 export ---
     scale_tag = f"{args.scale}pct"
-    out_dir   = os.path.join(_script_dir, f"replay_output_{scale_tag}")
+    run.out_dir   = os.path.join(_script_dir, f"replay_output_{scale_tag}")
     if rank == 0:
-        os.makedirs(out_dir, exist_ok=True)
+        os.makedirs(run.out_dir, exist_ok=True)
 
     hdf5_path = (args.out_hdf5
                  if args.out_hdf5
-                 else os.path.join(out_dir, f"replay_{scale_tag}.h5"))
+                 else os.path.join(run.out_dir, f"replay_{scale_tag}.h5"))
     if rank == 0:
         os.makedirs(os.path.dirname(os.path.abspath(hdf5_path)), exist_ok=True)
 
@@ -6349,22 +6389,22 @@ Dentate gyrus (Phase 6.2):
                   f"went to {_t_end:.0f} ms. Re-run with a larger --rhythm-horizon-ms. "
                   f"The HDF5 file gets rhythm_truncated=True.")
 
-    net["epoch_ms"] = SIM_MS   # length of one sleep epoch, for the HDF5 schedule attrs
+    run.net["epoch_ms"] = run.SIM_MS   # length of one sleep epoch, for the HDF5 schedule attrs
     print(f"\n>>> [rank {rank}] Entering HDF5 export...")
-    save_replay_hdf5(net, total_sim_ms, cfg["label"], hdf5_path,
-                     ec_module=ec_module, stc_hook=stc_hook,
-                     eclv_module=eclv_module, mpfc_module=mpfc_module,
-                     homeo_stats=homeo_stats, homeo_results=homeo_results,
-                     dg_module=dg_module, mpfc_assoc_hook=mpfc_assoc_hook,
-                     mpfc_rec_hook=mpfc_rec_hook,
-                     schaffer_hook=schaffer_hook)
+    save_replay_hdf5(run.net, run.total_sim_ms, run.cfg["label"], hdf5_path,
+                     ec_module=run.ec_module, stc_hook=run.stc_hook,
+                     eclv_module=run.eclv_module, mpfc_module=run.mpfc_module,
+                     homeo_stats=run.homeo_stats, homeo_results=run.homeo_results,
+                     dg_module=run.dg_module, mpfc_assoc_hook=run.mpfc_assoc_hook,
+                     mpfc_rec_hook=run.mpfc_rec_hook,
+                     schaffer_hook=run.schaffer_hook)
 
     if rank != 0:
         print(f">>> [rank {rank}] Done (non-root rank exiting).")
         raise SystemExit(0)
 
-    if schaffer_hook is not None and schaffer_hook.history:
-        h = schaffer_hook.history
+    if run.schaffer_hook is not None and run.schaffer_hook.history:
+        h = run.schaffer_hook.history
         print("\n--- Schaffer STDP (CA3->CA1, delay-aware) ---")
         print(f"  {'event':>6s} {'potentiated':>12s} {'depressed':>10s} "
               f"{'w_mean':>9s} {'w_CV':>8s}")
@@ -6378,27 +6418,24 @@ Dentate gyrus (Phase 6.2):
               f"(rising CV = synapses differentiating, i.e. paths being selected)")
 
     if args.n_patterns > 1:
-        _pops = [("CA3 SUP", net["CA3_SUP"], net["spk_ca3_sup"]),
-                 ("CA1 PYR", net["PYR"],     net["spk_pyr"])]
-        if dg_module is not None:
-            # The engram question (RESULTS.md §13) is decided here, not
-            # downstream: DG is the first stage with a sparse code, so it is
-            # the first place "selective" can be measured at all. Previously
-            # this table skipped DG and the within/between Jaccard had to be
-            # recomputed offline from the exported raster every time.
-            _pops.append(("DG GC", dg_module.GC, dg_module.spk_gc))
-        if ec_module   is not None:
-            _pops.append(("EC LII", ec_module.population,   ec_module.spike_rec))
-        if eclv_module is not None:
-            _pops.append(("EC LV",  eclv_module.population, eclv_module.spike_rec))
-        if mpfc_module is not None:
-            _pops.append(("mPFC",   mpfc_module.population, mpfc_module.spike_rec))
-        _disc = pattern_discrimination(net, _pops, swr_fwd, swr_rev,
-                                       SIM_MS, n_epochs)
+        _pops = [("CA3 SUP", run.net["CA3_SUP"], run.net["spk_ca3_sup"]),
+                 ("CA1 PYR", run.net["PYR"],     run.net["spk_pyr"])]
+        if run.dg_module is not None:
+            # DG is the first sparse stage, so the first place a selective
+            # (engram-like) code can be measured (RESULTS.md §13)
+            _pops.append(("DG GC", run.dg_module.GC, run.dg_module.spk_gc))
+        if run.ec_module   is not None:
+            _pops.append(("EC LII", run.ec_module.population,   run.ec_module.spike_rec))
+        if run.eclv_module is not None:
+            _pops.append(("EC LV",  run.eclv_module.population, run.eclv_module.spike_rec))
+        if run.mpfc_module is not None:
+            _pops.append(("mPFC",   run.mpfc_module.population, run.mpfc_module.spike_rec))
+        _disc = pattern_discrimination(run.net, _pops, run.swr_fwd, run.swr_rev,
+                                       run.SIM_MS, run.n_epochs)
         print_pattern_discrimination(_disc, args.n_patterns)
 
-    if mpfc_assoc_hook is not None and mpfc_assoc_hook.history:
-        h = mpfc_assoc_hook.history
+    if run.mpfc_assoc_hook is not None and run.mpfc_assoc_hook.history:
+        h = run.mpfc_assoc_hook.history
         print(f"\n--- Cortical association build-up (EC LV -> mPFC) ---")
         print(f"  {'event':>6s} {'co-active':>10s} {'w_mean':>8s} {'CV':>8s}")
         for i, r in enumerate(h):
@@ -6423,15 +6460,15 @@ Dentate gyrus (Phase 6.2):
         else:
             print(f"  [OK] weight CV={cv:.4f} — a distinct subset is potentiated (engram).")
 
-    print_report(net, total_sim_ms, cfg["label"],
-                 ec_module=ec_module, dg_module=dg_module,
-                 eclv_module=eclv_module, mpfc_module=mpfc_module)
+    print_report(run.net, run.total_sim_ms, run.cfg["label"],
+                 ec_module=run.ec_module, dg_module=run.dg_module,
+                 eclv_module=run.eclv_module, mpfc_module=run.mpfc_module)
 
     if not args.no_figures:
         print("\n>>> Generating figures...")
-        prefix = os.path.join(out_dir, f"bidir_replay_{scale_tag}")
-        paths  = plot_bidirectional_replay(net, sim_ms=SIM_MS, save_prefix=prefix)
-        print(f">>> Figures saved to: {out_dir}/")
+        prefix = os.path.join(run.out_dir, f"bidir_replay_{scale_tag}")
+        paths  = plot_bidirectional_replay(run.net, sim_ms=run.SIM_MS, save_prefix=prefix)
+        print(f">>> Figures saved to: {run.out_dir}/")
         for pp in paths:
             print(f"    {os.path.basename(pp)}")
     else:
@@ -6439,5 +6476,26 @@ Dentate gyrus (Phase 6.2):
         print(f"    To plot locally, run:")
         print(f"    python replay_plot_from_hdf5.py --in {hdf5_path} --save-prefix replay_plots/run1")
 
-    print(f"\n>>> Total wall time: {time.perf_counter()-t_wall:.1f}s")
+    print(f"\n>>> Total wall time: {time.perf_counter()-run.t_wall:.1f}s")
     print(">>> Done.")
+
+
+def main(argv=None):
+    """Entry point. The steps share state through `run`, a plain namespace,
+    so a long-lived process (the planned memory server) can call build_model()
+    once and then run further steps on the same network."""
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    sim.use(args.backend)
+    run = types.SimpleNamespace()
+    setup_run(args, parser, run)
+    run_pattern_completion_probe(args, parser, run)
+    build_model(args, run)
+    run_consolidation(args, run)
+    run_cortical_recall(args, run)
+    run_homeostasis(args, run)
+    export_results(args, run)
+
+
+if __name__ == "__main__":
+    main()
