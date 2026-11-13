@@ -49,11 +49,12 @@ class Recalled:
 
 class MemoryService:
     def __init__(self, backend: MemoryBackend, db_path: str = ":memory:",
-                 min_score: float = 0.0) -> None:
+                 min_score: float | None = None) -> None:
         """min_score: hits below this confidence are dropped (the no-recall
-        threshold; each backend needs its own, set from the benchmark)."""
+        threshold; each backend needs its own, set from the benchmark).
+        None uses the backend's own ``min_score`` (0.0 if it has none)."""
         self.backend = backend
-        self.min_score = min_score
+        self.min_score = getattr(backend, "min_score", 0.0) if min_score is None else min_score
         self.db = sqlite3.connect(db_path)
         self.db.executescript(_SCHEMA)
         self.db.execute("INSERT OR IGNORE INTO state VALUES ('sleep_blocks', 0)")

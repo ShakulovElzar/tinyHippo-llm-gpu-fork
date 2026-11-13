@@ -109,7 +109,7 @@ def main(argv: list[str] | None = None) -> dict:
 
     events = (dialogue.load(args.scenario) if args.scenario
               else dialogue.generate(seed=args.seed, n_sessions=args.n_sessions))
-    service = MemoryService(BACKENDS[args.backend]())
+    service = MemoryService(BACKENDS[args.backend](), min_score=0.0)  # threshold applied in score()
     records = run(events, service, k=args.k)
     result = {"backend": args.backend, "seed": args.seed,
               "n_memories": service.count(), "scores": score(records, args.threshold, args.k),

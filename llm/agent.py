@@ -31,8 +31,9 @@ Store one self-contained fact per `remember` call, written so it makes sense wit
 the conversation (names, not pronouns). Store facts about the user and their world \
 that they would expect you to know later; skip small talk.
 
-When a question may depend on something said earlier, call `recall` with a short cue \
-before answering. Recall results come with a confidence score; if nothing relevant \
+When a question may depend on something said earlier, call `recall` before answering. \
+Build the cue from the user's own key words (names, objects, verbs), in the user's \
+language; if nothing comes back, try once more with other words from the question. Recall results come with a confidence score; if nothing relevant \
 comes back, say that you do not remember rather than guessing."""
 
 
@@ -52,7 +53,7 @@ def build_tools(service: MemoryService) -> list:
         """Look up memories matching a partial cue. Returns up to k memories, best first.
 
         Args:
-            cue: A short description of what to look for, e.g. "Alice's dentist appointment".
+            cue: Key words from the user's question, in their language, e.g. "Alice dentist appointment".
             k: Maximum number of memories to return.
         """
         hits = service.recall(cue, k=max(1, min(int(k), 10)))

@@ -18,11 +18,13 @@ from collections import Counter
 
 from .base import Hit
 
-_TOKEN = re.compile(r"[a-z0-9]+")
+_TOKEN = re.compile(r"[^\W_]+")  # letters and digits in any script (Cyrillic too)
 _STOP = frozenset(
     "a an and are at be by did do does for from has have i in is it its me my "
     "of on or our that the their them they this to was we were what when where "
-    "which who why will with you your".split()
+    "which who why will with you your "
+    "а в во и к как ли мне мой моя мое моё мои на не о об от по с со у что это я ты вы он она они "
+    "его ее её их меня тебя мы наш ваш какой какая какое какие".split()
 )
 
 
@@ -65,6 +67,9 @@ class TfidfBackend:
     """
 
     name = "tfidf"
+    # No-recall threshold from the L0 benchmark sweep (seeds 0-2, checked on 3-4):
+    # false recall 0.92 -> 0.06-0.12, recall@1 0.78 -> 0.61-0.64.
+    min_score = 0.6
 
     def __init__(self) -> None:
         self._tf: dict[str, Counter[str]] = {}
