@@ -696,9 +696,8 @@ the assembly on 2 seeds (kr_s303 too: 0.35–0.61): after the lesion the priming
 fire without a cue, so the G2 test is not valid on those runs. mPFC readout dropped to 64%.
 
 Result: **G2 still not met.** What changed: learning in mPFC now works and is pattern-specific
-(kr, 3/3 seeds); before the fix it worked against the pattern. What blocks G2 at 1%: 120 mPFC
-cells, sparse recurrent input per cue, and a priming state that is often not silent before the
-cue. Not fixed by learning rate or in-degree alone.
+(kr, 3/3 seeds); before the fix it worked against the pattern. What blocks G2 at 1%: sparse
+recurrent input per cue, and a priming state that is often not silent before the cue. Not fixed by learning rate or in-degree alone.
 
 **5. Priming sweep (kr flags + `--g2-trials 12`, seed 303, `pr*_s303`).** `--cr-prime-rate`
 120 (kr) / 90 / 60 / 30 Hz: pre-cue baseline 0.35–0.61 / 0.74–0.91 / 0.00–0.22 / 0.16–0.42;
@@ -710,11 +709,13 @@ before any cue. That firing carries no pattern and swamps a cue whose learned ef
 
 Result: **at 1%, G2 cannot be shown with these mechanisms.** The learned trace exists in the
 weights (kr, 3/3 seeds), but the recall test cannot read it out: too few recurrent inputs per
-cue at 120 mPFC cells, plus pattern-free EC LV drive after the lesion.
+cue, plus pattern-free EC LV drive after the lesion.
 
 Open items:
 - Report own−other recurrent weight as the consolidation readout next to G2.
-- 12%: run `kr` flags (`--hebb-keep-strong --mpfc-rec-a 0.3 --mpfc-rec-wmax 4`); 12× more mPFC
-  cells removes the 1.7-input limit.
+- 12%: run `kr` flags (`--hebb-keep-strong --mpfc-rec-a 0.3 --mpfc-rec-wmax 4`). Scale alone
+  does **not** remove the 1.7-input limit: inputs per uncued cell = K × (cue size / N), and the
+  cue is a fixed fraction of N. At 12% (N 1440, cue 124, K 20) it is still ~1.7. `--mpfc-k-rec`
+  must rise at 12% too.
 - Decide whether the lesion should also silence EC LV → mPFC drive, or
   whether G2 should be scored against a per-trial pre-cue baseline.
