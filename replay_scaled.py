@@ -209,7 +209,7 @@ def _round_to_multiple(n: float, m: int) -> int:
     return max(m, int(round(n / m)) * m)
 
 
-def build_scale_config(pct: int) -> dict:
+def build_scale_config(pct: int, n_groups_override: int | None = None) -> dict:
     """
     Build a scale configuration for any integer percentage 1–100.
 
@@ -235,6 +235,8 @@ def build_scale_config(pct: int) -> dict:
 
     # n_seq_groups: sub-linear so small runs still have meaningful sequences
     n_groups = max(10, round(10 * pct ** 0.5))
+    if n_groups_override is not None:
+        n_groups = int(n_groups_override)
 
     cfg = {"label": f"{pct}% scale", "n_seq_groups": n_groups}
     for key, ref in _REF_100PCT.items():
@@ -5100,6 +5102,12 @@ Dentate gyrus (Phase 6.2):
         help="Experiment (WORKLOG section 10): feedforward PV pool onto EC LV, as "
              "--ec-lii-ff-inhib. Off by default.")
     parser.add_argument(
+        "--n-groups", type=int, default=None, metavar="G",
+        help="Experiment (WORKLOG section 15): number of CA3 sequence groups "
+             "(default: max(10, round(10*sqrt(scale)))). Patterns take groups "
+             "p, p+n_patterns, ...; so n_patterns <= G. Population sizes are "
+             "rounded to a multiple of G.")
+    parser.add_argument(
         "--ca3-drive-scale", type=float, default=1.0, metavar="S",
         help="Experiment (WORKLOG section 14): multiply the constant Poisson inputs to "
              "CA3 (tonic, EC, drive) by S, so SWR replay can stand out. Default 1.")
@@ -5107,6 +5115,22 @@ Dentate gyrus (Phase 6.2):
         "--swr-bg-gain", type=float, default=None, metavar="G",
         help="Experiment (WORKLOG section 14): give the sharp-wave/ripple background in "
              "EVERY epoch (default: epoch 0 only), with rates x G. Off by default.")
+    parser.add_argument(
+        "--mpfc-rec-a", type=float, default=0.02, metavar="A",
+        help="Experiment (WORKLOG section 15): Hebbian step on mPFC->mPFC recurrent "
+             "weights per SWR window (default 0.02; depression is A/5).")
+    parser.add_argument(
+        "--mpfc-rec-wmax", type=float, default=2.4, metavar="W",
+        help="Experiment (WORKLOG section 15): cap on learned mPFC->mPFC weights "
+             "(default 2.4).")
+    parser.add_argument(
+        "--mpfc-w-ei", type=float, default=2.5, metavar="W",
+        help="Experiment (WORKLOG section 15): mPFC -> mPFC interneuron weight "
+             "(default 2.5). Higher makes lateral inhibition react to mPFC activity.")
+    parser.add_argument(
+        "--n-mpfc", type=int, default=None, metavar="N",
+        help="Experiment (WORKLOG section 15): number of mPFC cells (default: 20%% "
+             "of EC LV). Interneurons scale with it.")
     parser.add_argument(
         "--w-eclv-mpfc", type=float, default=1.8, metavar="W",
         help="Experiment (WORKLOG section 14): EC LV -> mPFC weight in mV. Default 1.8 "
@@ -5652,7 +5676,7 @@ Dentate gyrus (Phase 6.2):
                       "scale, see build_dg_neurogenesis_hook), so without "
                       "--dg-neurogenesis there is nothing for it to update")
 
-    cfg = build_scale_config(args.scale)
+    cfg = build_scale_config(args.scale, args.n_groups)
 
     n_threads = (args.threads
                  if args.threads is not None
@@ -5990,6 +6014,8 @@ Dentate gyrus (Phase 6.2):
                 n_groups   = net["n_seq_groups"],
                 seed_connect = (args.seed if args.seed is not None else 42),
                 w_eclv_mpfc = args.w_eclv_mpfc,
+                N_mpfc = args.n_mpfc,
+                w_mpfc_ei = args.mpfc_w_ei,
             )
 
     if args.ec_lii_ff_inhib is not None and ec_module is not None:
@@ -6083,7 +6109,10 @@ Dentate gyrus (Phase 6.2):
             for _ws, _we in ((swr_fwd[0], swr_fwd[1]), (swr_rev[0], swr_rev[1])):
                 run_mpfc_assoc_hook(mpfc_rec_hook, mpfc_module, mpfc_module,
                                     t_swr_start=epoch_t0 + _ws,
-                                    t_swr_end=epoch_t0 + _we)
+                                    t_swr_end=epoch_t0 + _we,
+                                    A_assoc=args.mpfc_rec_a,
+                                    A_hetero=args.mpfc_rec_a / 5.0,
+                                    w_max=args.mpfc_rec_wmax)
 
         # Cortical association build-up: same two SWR windows, EC LV -> mPFC
         if mpfc_assoc_hook is not None:
