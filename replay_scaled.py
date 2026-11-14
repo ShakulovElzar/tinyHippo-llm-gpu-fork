@@ -3764,7 +3764,7 @@ def run_schaffer_stdp_hook(hook, net, t_start, t_end,
     return rec
 
 
-def lesion_hippocampus(net, ec_module, eclv_module, stc=None):
+def lesion_hippocampus(net, ec_module, eclv_module, stc=None, mpfc_module=None):
     """Silence hippocampal output to cortex — the systems-consolidation lesion.
 
     Zeroes CA1 -> EC LII and CA1 -> EC LV. Everything cortical (EC LII, EC LV,
@@ -3818,6 +3818,13 @@ def lesion_hippocampus(net, ec_module, eclv_module, stc=None):
         if pv is not None:
             c = sim.GetConnections(target=pv)
             sim.SetStatus(c, "weight", np.zeros(len(c)))
+            n += len(c)
+    if mpfc_module is not None and eclv_module is not None:
+        # Optional: also cut EC LV -> mPFC (--lesion-eclv-mpfc).
+        c, _, _, _ = get_conns_between(eclv_module.population, mpfc_module.population)
+        if len(c):
+            sim.SetStatus(c, "weight", np.zeros(len(c)))
+            print(f"  [lesion] EC LV->mPFC silenced: {len(c):,} synapses zeroed")
             n += len(c)
     print(f"  [lesion] CA1->cortex silenced: {n:,} synapses zeroed "
           f"(cortex intact, hippocampus disconnected)")
@@ -5572,6 +5579,12 @@ Dentate gyrus (Phase 6.2):
              "keeps the old rule, which clamps co-active synapses above w_max "
              "down to w_max.")
     parser.add_argument(
+        "--lesion-eclv-mpfc", action="store_true",
+        help="--cortical-recall: the lesion also zeroes EC LV -> mPFC. The plain "
+             "lesion cuts only CA1 -> cortex; EC LV keeps firing on its own "
+             "background and drives mPFC before the cue. With this flag mPFC "
+             "keeps only its recurrent weights, as the probe assumes.")
+    parser.add_argument(
         "--no-mpfc-assoc", action="store_true",
         help="Disable the EC LV->mPFC associative (Hebbian) build-up that forms "
              "the cortical engram. By default --mpfc enables it; without it the "
@@ -6199,7 +6212,8 @@ def run_cortical_recall(args, run):
             print("  [SKIP] assembly too small to cue and score")
         else:
             # 2. lesion: hippocampal output to cortex is severed
-            lesion_hippocampus(run.net, run.ec_module, run.eclv_module, stc=run.stc_hook)
+            lesion_hippocampus(run.net, run.ec_module, run.eclv_module, stc=run.stc_hook,
+                               mpfc_module=run.mpfc_module if args.lesion_eclv_mpfc else None)
             # 3. tonic priming. After the lesion mPFC has NO input at all -- EC
             # LV is silent, so the only remaining excitation is the recurrent
             # collaterals, which cannot start from nothing. The CA3 completion

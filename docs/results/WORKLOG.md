@@ -711,11 +711,34 @@ Result: **at 1%, G2 cannot be shown with these mechanisms.** The learned trace e
 weights (kr, 3/3 seeds), but the recall test cannot read it out: too few recurrent inputs per
 cue, plus pattern-free EC LV drive after the lesion.
 
+**6. S0 check after the new flags.** S0 config (1 thread, 4 SWR, seed 202) on `2f5887f` and on
+the new code: same digest `8631eb29…`. The flags do not change the model when off. Both differ
+from the 11 Nov reference `2b17274a…`; the commits merged since then (881c34e, 6b4dd16, …) caused
+that, not these flags. Side note: the same config at 3 threads diverged at 3.9 s between old and
+new code, which are equivalent, so 3-thread runs are probably not always bit-identical. Not
+checked further.
+
+**7. Lesion also cuts EC LV → mPFC (`--lesion-eclv-mpfc`, opt-in).** The probe comment assumes
+"EC LV is silent" after the lesion; in this config it is not (item 5). The flag zeroes the 2,400
+EC LV → mPFC synapses at the lesion. kr flags + `--g2-trials 12`, `lz_s*`:
+
+| run | pre-cue baseline | G2 own − others | p |
+|---|---|---|---|
+| lz_s202 (learning) | 0.000 | −0.000 | 0.51 |
+| lz_s303 (learning) | 0.000 | +0.025 | 0.001 PASS |
+| lz_s404 (learning) | 0.000 | +0.016 | 0.001 PASS |
+| lzn_s303 (no plasticity) | 0.000 | +0.033 | 0.0005 PASS |
+| lzn_s404 (no plasticity) | 0.000 | +0.010 | 0.039 |
+
+The flag fixes the baseline (0 on every run). But the no-plasticity control passes G2 as well
+(s303 even higher), so **the G2 passes come from the built-in group wiring, not from sleep.**
+The effect is ~1 extra cell of ~14 uncued per trial. At 1%, G2 cannot tell learned from wired.
+
 Open items:
-- Report own−other recurrent weight as the consolidation readout next to G2.
+- Report own−other recurrent weight as the consolidation readout next to G2. G2 alone needs a
+  no-plasticity control on every seed (item 7).
 - 12%: run `kr` flags (`--hebb-keep-strong --mpfc-rec-a 0.3 --mpfc-rec-wmax 4`). Scale alone
   does **not** remove the 1.7-input limit: inputs per uncued cell = K × (cue size / N), and the
   cue is a fixed fraction of N. At 12% (N 1440, cue 124, K 20) it is still ~1.7. `--mpfc-k-rec`
   must rise at 12% too.
-- Decide whether the lesion should also silence EC LV → mPFC drive, or
-  whether G2 should be scored against a per-trial pre-cue baseline.
+- Lesion: use `--lesion-eclv-mpfc` (item 7); the baseline problem is solved.
