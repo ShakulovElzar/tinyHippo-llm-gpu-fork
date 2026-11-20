@@ -1548,7 +1548,7 @@ def build_replay_network(
             _rr = np.random.default_rng(seed_connect * 1000 + 777 + ep)
             _pick = _rr.choice(_pool, size=sum(len(g) for g in grp), replace=False)
             _cuts = np.cumsum([len(g) for g in grp])[:-1]
-            grp = [list(c) for c in np.split(_pick, _cuts)]
+            grp = [sorted(int(x) for x in c) for c in np.split(_pick, _cuts)]
         f_s, r_s = t0_ep + swr_fwd_start, t0_ep + swr_rev_start
         # pattern_source="ec-lii": CA3 gets no direct pattern-specific
         # injection at all -- the encoding-direction drive is wired onto
