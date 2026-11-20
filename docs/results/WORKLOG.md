@@ -1,6 +1,7 @@
 # Work log: tinyHippo-llm-gpu (local Mac)
 
-Personal log, committed on branch `shim`. Machine: Apple M4, 10 cores, 17 GB RAM, macOS.
+Personal log, on branch `llm-work` (first written on `shim`, which was merged and deleted in
+section 15). Machine: Apple M4, 10 cores, 16 GB RAM, macOS.
 NEST 3.10.0 (Homebrew), Python 3.15.2, `.venv` with `--system-site-packages`.
 Max's baseline (RESULTS_llm_gpu §1) used an Apple M3 with NEST 3.9.0.
 
@@ -14,7 +15,7 @@ Max's baseline (RESULTS_llm_gpu §1) used an Apple M3 with NEST 3.9.0.
    `brew install hdf5`, because no h5py wheel exists for Python 3.15.
    I did not use `requirements.txt`: its `numpy<2.0` pin breaks Homebrew NEST.
 3. Ran the L0 tests on branch `llm-l0`: 8/8 pass.
-4. Built the viewer (`viewer/`, branch `viewer`, not committed):
+4. Built the viewer (`viewer/`, branch `viewer`; committed later in `90d2bec`):
    - `viewer/app.py`: local web server on http://127.0.0.1:8765. Reads run HDF5 files in `out/`.
      Starts new runs (form "New run").
    - `viewer/export_wiring.py`: rebuilds the network with the same flags and saves every
@@ -52,6 +53,7 @@ Findings:
 - Blocks 2–4 are not reliable. The simulation log prints only block 1, so the log hides this.
 - Cortical recall after the lesion fails on both seeds: "no cortical recall above baseline",
   0 L-LTP synapses. Max's §1 says this is expected at 1% with 4 blocks.
+  (Studied in depth in sections 7 and 18.)
 - All of this is 1% and 2 seeds: a pilot, not a result (CLAUDE.md rule).
 
 ### 2. S0 reference runs (started 12:46 CET)
@@ -97,19 +99,20 @@ Result: **PASS. Run A and run B are bit-identical.**
   Simulation wall time 130.8 s with 1 thread. The 8-thread run `run4_seed303` took 179.7 s.
   So on this M4, 1 thread was faster than 8 threads. One measurement each; not checked further.
 
-How to repeat the check after a code change (for S0):
+How to repeat the check after a code change (for S0). Updated: the script is now
+`analysis/h5_digest.py`, and the valid reference is `8631eb29…` (`out/s0_fix.h5`, section 6),
+not `2b17274a…`:
 
 ```bash
 .venv/bin/python replay_scaled.py <flags above> --out-hdf5 out/s0_after.h5
-git show llm-l0:h5_digest.py > /tmp/h5_digest.py
-.venv/bin/python /tmp/h5_digest.py out/s0_ref_t1.h5 out/s0_after.h5
+.venv/bin/python analysis/h5_digest.py out/s0_fix.h5 out/s0_after.h5
 ```
 
 Same digest = the change did not alter the model. Different = use `--diff` to see which data changed.
 
 ### 3. S0 shim: `simbackend.py` (branch `shim`)
 
-Branch `shim` made from `main` (`4e84158`). Committed on `shim`, not pushed.
+Branch `shim` made from `main` (`4e84158`). Committed on `shim` (later merged; `shim` deleted in section 15).
 
 What changed:
 
@@ -180,7 +183,7 @@ Notes:
 - First attempt of A and B failed at once (argparse exit 2): zsh passed the flags as one word.
   Re-run with separate words. Not a code problem.
 
-### 5. Generator replacement: `--rhythm-gen spike_generator` (branch `shim`, not committed)
+### 5. Generator replacement: `--rhythm-gen spike_generator` (branch `shim`; committed later in `581393d`)
 
 Problem: theta and ripple drive use NEST's `sinusoidal_poisson_generator`. NEST GPU does not have
 it. Without a fix, `tiny.py` would catch the error and run **without theta** and with a **flat
@@ -492,7 +495,7 @@ pattern difference on a large constant input (sections 8–10).
 
 Not tested: lowering the constant CA3/CA1 drive. That changes the whole hippocampal operating
 point (DG, replay and STC were all calibrated at this point), so it is a science change for
-`tinyHippo`, not a quick flag.
+`tinyHippo`, not a quick flag. (Tested later as an opt-in flag, `--ca3-drive-scale`, section 14.)
 
 ### 13. Reverse replay with EC LII inhibition: 7 seeds; inhibition sweep on the slice
 
@@ -514,7 +517,8 @@ weak or lost. −0.25: 1.6–1.8% active, z +0.48–0.51, decode 0.64–0.71 (p 
 cause of the weak full-model decoder (0.43–0.64); difference to the slice not checked (STC?).
 
 CA3 tonic drive: added by Max in 18cfbe6 (2026-08-04) on purpose (without it consolidation
-failed at 12%). His comment expects CA3 ~7.5 Hz; full-loop runs show ~20 Hz. Asked him; not changed.
+failed at 12%). His comment expects CA3 ~7.5 Hz; full-loop runs show ~20 Hz. Asked him; not changed. (He
+answered on 2026-11-12; the drive became an opt-in flag in section 14.)
 
 ### 14. Lower CA3 drive + stronger EC LV → mPFC: the pattern reaches mPFC on 3 seeds
 
@@ -653,7 +657,7 @@ improve the mPFC decoder (0.57 / 0.50 / 0.79 vs 0.86 / 0.36 / 0.71). The limit i
 co-firing events, not the weights. Not yet tried: more sleep epochs (more SWR windows); a more
 active mPFC during replay.
 
-Open items:
+Open items (superseded by the list at the end of section 18):
 - Remote memory (G2): more SWR windows, or more mPFC activity during replay.
 - Capacity beyond 10 at 1%: more cortical cells per memory, or overlapping codes (2–3 groups
   per memory).
@@ -742,3 +746,678 @@ Open items:
   cue is a fixed fraction of N. At 12% (N 1440, cue 124, K 20) it is still ~1.7. `--mpfc-k-rec`
   must rise at 12% too.
 - Lesion: use `--lesion-eclv-mpfc` (item 7); the baseline problem is solved.
+
+### 19. Pre-registration: is mPFC pattern identity after the lesion created by sleep replay? (2026-11-14)
+
+Written before any run of this design. The pilot (below) is a feasibility check, not part of the test.
+
+**Claim.** With random cortical wiring, the identity of a replayed pattern can be decoded from
+mPFC after the hippocampal lesion, and this identity is created by SWR replay plus learning,
+not by the wiring.
+
+**Fixed config.** Section 18 `lz` flags (1%, 3 patterns, `--threads 3`, `--lesion-eclv-mpfc`,
+`--g2-trials 12`, `--cr-cue-frac 0.4`) with `--cortex-group-frac 0` (random CA1→EC LV,
+EC LII→EC LV, EC LV→mPFC and mPFC recurrent wiring), plus `--g2-fixed-cue --save-epoch-weights`.
+Hippocampal group wiring (Schaffer, CA1→EC LII at 0.7) stays: it carries the pattern to cortex.
+Input identity = the CA3 group sequence injected in each SWR (`--pattern-source ca3`;
+`ca3_sup/group_ids` and `epoch_pattern` in the HDF5). There is no separate EC LII input
+pattern in this mode.
+
+**Design.**
+- Learning: on (`--hebb-keep-strong --mpfc-rec-a 0.3 --mpfc-rec-wmax 4`) / off
+  (`--no-stc-hook --no-mpfc-assoc`).
+- Replay: intact / random. Random = each SWR drives the same number of CA3 cells with the same
+  spikes, but the cells are drawn at random, not from the pattern's groups. Needs a new opt-in
+  flag (not written yet; this is a model change, so it also goes to upstream `tinyHippo`).
+- SWR count: 3, 6, 12, 24 (1, 2, 4, 8 replays per pattern, equal across patterns).
+- Capture-blocked arm: learning on, intact replay, 12 SWR, `--prp-threshold 999`.
+- 17 cells. Seeds: n = max(10, power-analysis n), same seed list in every cell, so runs pair
+  by seed (same wiring).
+- Changes from the original request, decided 2026-11-14: SWR levels {0, 2, 7, 14} replaced
+  (0 SWR defines no mPFC assemblies to cue; 2 SWR never replays pattern 2; 7 gives 3/2/2).
+  Lesion delay and criterion (d) dropped: the model has no time-dependent process between
+  learning and lesion, so a delay can only mean more SWRs.
+
+**Primary readout** (`analysis/decode_postlesion.py`). Per post-lesion cue trial: spike count of
+each mPFC cell in [cue, cue + 80 ms], with every cue cell of every pattern removed (so the
+decoder cannot read the cue itself). L2 logistic regression, stratified 4-fold CV × 5 repeats,
+chance 1/3; null = 1000 label shuffles. Shuffle-corrected MI (bits) from the pooled confusion
+matrix. Per seed: Δ = acc(learn on) − acc(learn off), same replay and SWR level. Group level:
+mean Δ with a bootstrap 95% CI over seeds (10,000 resamples).
+
+**Secondary readouts.** Recurrent own−other weight (mV). EV/REV (Kudrimoti 1999) on mPFC cell-pair
+correlations of 10 ms counts: TASK = consolidation SWR windows, POST = post-lesion trials (cue
+cells removed), PRE = the same seed's learning-off run POST (same wiring, no learning).
+ICA assemblies (Lopes-dos-Santos 2013: Marchenko–Pastur count, FastICA patterns) from TASK,
+activation strength in POST. Secondary readouts do not decide pass/fail.
+
+**Power analysis.** From the pilot paired Δ at 12 SWR: n = ((1.96 + 0.84) · sd(Δ) / mean(Δ))²
+(two-sided α 0.05, power 0.8), at least 10. If mean(Δ) ≤ 0 in the pilot, stop and report
+instead of scaling.
+
+**Exclusions** (decided now, applied blind to condition). A run is excluded if the G2 probe
+skips (assembly < 4 cells) or the pre-cue baseline of any assembly is > 0.05. Excluded runs
+are listed, never replaced by a new seed.
+
+**Falsification.** The claim fails if any of these holds:
+- (0) At 24 SWR, intact replay: CI of Δ includes 0 or lies below it.
+- (a) Learning-off runs (any replay) or learning-on random-replay runs decode above chance:
+  the bootstrap CI of the cell's mean accuracy lies above 1/3 in any of these cells.
+- (b) Decoding does not rise with SWR count: Spearman ρ between SWR count and per-seed Δ
+  (intact replay), bootstrap CI over seeds includes 0 or lies below it.
+- (c) The capture-blocked arm keeps the trace: CI of its Δ (vs learning off, 12 SWR) lies
+  above 0. Stated prediction: (c) will probably fire, because `--prp-threshold` gates only
+  CA1→EC LII capture, while the post-lesion trace lives in mPFC recurrent weights, which learn
+  by a Hebbian rule that capture does not gate. A fire is reported as is.
+
+**Pilot (feasibility only).** Random wiring, intact replay, 12 SWR, seeds 202/303, learning on
+(`out/idp/L_s*`) and off (`out/idp/N_s*`). Question: can learning create any decodable identity
+without built-in cortical groups? Code for the pilot: opt-in `--g2-fixed-cue` (one cue subset per
+pattern, exported as `g2_recall/cue_sets`) and `--save-epoch-weights` (`epoch_weights/`).
+
+**Pilot result (2026-11-14).** 4 runs, 21–23 min each, `out/idp/`. All pre-cue baselines 0, no
+exclusions. S0 check with both new flags off: digest `8631eb29…`, same as section 18 item 6.
+
+The pre-registered readout is **not valid** and was replaced (fixed before main runs, so the
+pre-registration above is superseded on this point):
+- A decoder trained and tested on post-lesion trials decodes the cue in the no-learning runs
+  (0.56 / 0.78, chance 0.33). A fixed cue drives the same random targets on every trial
+  (N_s303: cue 0 fires one cell on 12/12 trials), so it reads "which cue", not "which memory".
+- New readout: fit on the sleep SWR windows (one sample per epoch, label = replayed pattern),
+  test on the post-lesion trials, all cue cells removed. Null: shuffle the **sleep** labels and
+  refit. A trial-label shuffle is wrong with a fixed cue, because trials of one cue are not
+  independent. This also makes G2's own p-value invalid under `--g2-fixed-cue`.
+
+| run | responsive trials | decoder acc (null 95%) | p | G2 own−others | own−other w change, epoch 1→12 (mV) |
+|---|---|---|---|---|---|
+| L_s202 (learning) | 25% | 0.36 (0.44) | 0.40 | +0.026 | +0.31 |
+| N_s202 (none) | 44% | 0.38 (0.46) | 0.47 | 0.000 | — |
+| L_s303 (learning) | 17% | 0.28 (0.39) | 1.00 | 0.000 | +0.18 |
+| N_s303 (none) | 53% | 0.52 (0.63) | 0.28 | +0.006 | — |
+
+1. **No learning effect after the lesion.** All 4 runs decode at chance. Δ (learning − none):
+   decoder −0.02 / −0.24, G2 +0.026 / −0.006.
+2. **Learning changes weights on both seeds by a similar amount** (+0.31 / +0.18 mV). Use the
+   change, not the final value: with `--het 0.30` and only 11–25 synapses inside the assemblies,
+   the random starting offset is ±0.15 mV (seen: +0.20 / −0.16 after epoch 1).
+3. **Cause: the input to mPFC is not selective.** With random cortical wiring, mPFC fires almost
+   the same cells for every pattern during sleep (Jaccard of active sets: same pattern 0.44–0.58,
+   different patterns 0.51–0.52). The assemblies (5–7 cells) are picked mostly from noise.
+4. **Little to read after the lesion:** only 3–6 non-cue mPFC cells fire, on 17–53% of trials.
+
+Result: at 1% with random cortical wiring the trace fails at the input, not at learning. Stop
+rule met (decoder mean Δ ≤ 0): **not scaled.**
+
+### 20. Can G2 detect a cortical trace of the size sleep learning makes? (2026-11-14)
+
+**Pre-registration** (written before any Test A or B run).
+
+Question: the §19 pilot learned +0.18 / +0.31 mV own−other recurrent weight and G2 saw nothing.
+Is G2 too weak to see a trace of that size? If so, a G2 null (1% or 12%) says nothing about sleep.
+
+Already done, not repeated: no-learning twins and `--lesion-eclv-mpfc` (§18), cortex-group-frac
+0 and 0.7 with learning on/off (§18, §19), sleep-trained decoder (§19).
+
+New opt-in code (S0 digest must stay `8631eb29…` with it off):
+- `--plant-trace DW`: after the G2 assemblies are chosen and before the first cue, add DW mV to
+  every recurrent mPFC synapse whose pre and post cells are in the same assembly. Test only.
+  The weights are read back and checked. Count in `g2_recall` attr `n_planted`.
+- `--save-epoch-weights` also saves `epoch_weights/mpfc_rec_pre` (before any learning).
+
+Config: §19 pilot flags (12 SWR, 3 patterns, `--threads 3`), **without** `--g2-fixed-cue`. G2 uses
+the default random cue subset per trial, so its trial-shuffle null is the one H17 uses.
+The §19 decoder is dropped here: it needs `--g2-fixed-cue`, and a fixed cue breaks G2's null.
+
+- **Test A:** learning off, cortex-group-frac 0, DW ∈ {0, 0.1, 0.3, 0.5, 1.0}, seeds 202/303/404
+  (15 runs). Detected = G2 specificity > 0 at p < 0.01 on ≥ 2 of 3 seeds. Output: the smallest
+  detected DW, plus mean specificity per DW.
+  Validity check: a DW = 0 run with p < 0.01 means the null is too narrow; report it.
+  Stop rule: if DW = 0.5 is not detected, skip Test B and report that G2 cannot test the claim.
+- **Test B (optional):** cortex-group-frac 0.2 and 0.4 × learning on/off × seeds 202/303/404
+  (12 runs). Per seed: Δ = learning − no learning for G2 specificity; own−other weight change
+  (final − pre) for learning runs. Bootstrap 95% CI over seeds.
+
+Known caveat: 3-thread runs repeat in mPFC and in sleep (2 identical runs, 0 differences), but
+the hippocampus diverges after sleep (~3084 ms), and one earlier smoke run picked different
+assemblies (9 vs 4 cells) with the same config; that run could not be rechecked. Seeds, not
+reruns, are the unit of replication.
+
+**Result, Test A (15 runs, `out/pt/A_dw*_s*.h5`): G2 detects no planted trace, even 1.0 mV.**
+
+G2 specificity (p), from `g2_recall` attrs. Planted synapse count in brackets.
+
+| DW mV | s202 | s303 | s404 |
+|---|---|---|---|
+| 0   | +0.0045 (0.23) [0]  | +0.0019 (0.38) [0]  | 0 (1.0) [0] |
+| 0.1 | +0.0027 (0.32) [38] | −0.0218 (1.0) [24]  | −0.0042 (1.0) [47] |
+| 0.3 | −0.0013 (1.0) [52]  | +0.0019 (0.38) [43] | −0.0046 (1.0) [77] |
+| 0.5 | +0.0045 (0.22) [63] | 0 (1.0) [12]        | 0 (1.0) [80] |
+| 1.0 | +0.0106 (0.036) [38]| −0.0006 (0.62) [37] | +0.0130 (0.14) [35] |
+
+1. No run reaches p < 0.01, so no DW is detected. The smallest detected DW does not exist in 0–1.0 mV.
+2. Validity check passes: no DW = 0 run has p < 0.01.
+3. Stop rule met (0.5 mV not detected). Test B not run.
+4. Conclusion: at 1%, G2 cannot see a recurrent mPFC trace 3–5× larger than the one §19 learning
+   made. A G2 null at 1% therefore says nothing about sleep consolidation.
+5. Side finding: assembly size changes between runs of the same seed (s303: 5–10 cells; s404: 9–12)
+   although the assemblies are chosen before the plant. This matches the §20 caveat on 3-thread runs.
+   Small assemblies (5 cells, 12 planted synapses) give G2 even less to read.
+
+Not tested: whether G2 detects a trace at 12% (more recurrent inputs per cell), or with a larger DW.
+
+### 21. LLM step 3a: memories from the Nous database as EC LII spikes (2026-11-18)
+
+Task from Max: (3a) show database memories as spike sequences in EC, (3b) run consolidation,
+(3c) read the consolidated associations from EC. Option A first: a memory takes one model slot
+(`SlotBank`), slot s = pattern s; the text does not shape the spikes.
+
+New code (S0 digest with the flag off: `8631eb29…`, unchanged):
+- `llm/nous_export.py`: read-only export of active facts (oldest first, category `rule` skipped)
+  from the Nous eval database (`nous_mab_wp`, over Tailscale), with slots. Output in `out/nous/`
+  (not committed: it holds database text). Agent `mab-eval-prod_memory-8f18622a`, 3 facts:
+  0 "Glenn L. Martin Company was founded by Glenn L. Martin", 1 "Ian Marter died in the city of
+  London", 2 "Katniss Everdeen was created by Suzanne Collins".
+- `--ec-memories FILE` (opt-in, needs `--pattern-source ec-lii`, n_slots = `--n-patterns`): saves
+  slot/id/text in HDF5 group `ec_memories`. The EC LII drive itself is the existing place-field drive.
+- `plots/plot_ec_memories.py`: EC LII raster per memory, cells sorted by home memory.
+
+Config: §18 `kr` flags (cx + learning) with `--pattern-source ec-lii --place-field-sigma 0.15
+--ec-pattern-base-rate 20 --ec-pattern-peak-rate 800 --ec-pattern-weight 1.5
+--dg-ec-cluster-sigma 0.05` (Max's JOB H8 values), 12 SWR. `em3` = no extra routing; `emr` = +
+JOB H16 routing (`--mf-group-frac 0.7 --ec-ca3-k 12 --ec-ca3-w 1.0 --ec-ca3-group-frac 0.7`).
+
+| run | EC LII z (decoder) | CA3 SUP z | CA1 z | EC LV z (decoder) | mPFC z |
+|---|---|---|---|---|---|
+| em3_s202 | +1.41 (1.00, p 0.0005) | +0.07 (p 0.16) | −0.05 | +0.07 (0.00) | −0.09 |
+| emr_s202 | +1.41 (1.00, p 0.0005) | +0.09 (p 0.24) | +0.13 (p 0.20) | −0.03 (0.08) | −0.21 |
+| emr_s303 | +1.37 (1.00, p 0.0005) | +0.18 (p 0.07) | +0.12 (p 0.27) | +0.10 (0.58, p 0.02) | −0.06 |
+
+Result: **3a works at the input**: each memory drives its own EC LII band (raster
+`out/em/em3_s202_raster.png`). **It does not reach the hippocampus**: CA3 stays at chance, so
+nothing downstream can be consolidated. This repeats upstream RESULTS.md §31; the §32 routing
+(CA3 z +0.42 there) gives only +0.09/+0.18 here. Not checked: why weaker than §32 (12 vs 14
+blocks, `--ca3-drive-scale 0.35`, the cx cortex flags). 3b/3c not run: with CA3 at chance they
+would only measure the wiring.
+
+**Hybrid (`--pattern-source both`, new choice).** Both drives at once: the ec-lii place-field
+drive on EC LII (the database memory, 3a) and the ca3 trigger/scaffold on CA3. So the
+hippocampal pattern comes from the CA3 drive, not from the EC input (EC → CA3 fails at 1%,
+above). 3b/3c therefore test consolidation of an already-encoded memory, not encoding.
+Control `hyoff`: the same run with `--ec-pattern-weight 0` (EC drive off). Same flags as `em3`
+otherwise, without `--dg-ec-cluster-sigma`. S0 with the new code: `8631eb29…`, unchanged.
+
+| run | CA3 z | CA1 z (dec) | EC LII z (dec) | EC LV z (dec) | mPFC z (dec) | G2 (p) |
+|---|---|---|---|---|---|---|
+| hy_s202 | +1.10 | +0.73 (0.75) | +1.39 (1.00) | +0.44 (0.67) | +0.52 (0.58) | +0.008 (0.011) |
+| hy_s303 | +1.07 | +0.49 (0.75) | +1.36 (1.00) | +0.42 (0.92) | +0.41 (0.92) | 0.000 (1.0) |
+| hyoff_s202 | +1.07 | +0.81 (0.75) | +0.80 (1.00) | +0.46 (0.83) | +0.60 (0.75) | +0.100 (0.0005) |
+| hyoff_s303 | +1.05 | +0.55 (0.50) | +0.46 (0.67) | +0.21 (0.42) | +0.34 (0.67) | +0.012 (0.04) |
+
+z: all p ≤ 0.0005. Decoder = rate+timing accuracy, chance 0.33.
+
+Result: **in the hybrid, the database memories reach CA3, CA1, EC LV and mPFC on both seeds.**
+As expected, this comes from the CA3 drive: with the EC drive off, every stage still carries
+the memory. The EC input adds identity mainly in EC LII itself (z +1.39/+1.36 vs +0.80/+0.46)
+and, on s303 only, in EC LV (+0.42 vs +0.21). G2 passes only on `hyoff_s202`, without EC input,
+so G2 says nothing about the EC input (and §20: G2 cannot see a trace at 1%).
+Not done: 3c (associations read from EC after the lesion, against a no-learning twin).
+
+**3c: is the memory in EC learned? (hybrid, learning vs no-learning twin).** `hyL` = the hybrid
+flags (`out/em/hy.base`), rerun so the file has the new `stc/pre_gid`; `hyN` = the same plus
+`--no-stc-hook --no-mpfc-assoc` (no plasticity anywhere). Seeds 202 and 303. New readout
+`analysis/ec_weight_readout.py`: the learned CA1 → EC LII weight change, own memory minus other
+memories (pre label = CA1 index % G, post label = EC LII `home_group`; null = permute the EC home
+labels, 2000 times). `stc/pre_gid` is saved only with `--ec-memories`; S0 `8631eb29…`, unchanged.
+
+| run | EC LII z (dec) | EC LV z (dec) | mPFC z (dec) | G2 (p) | CA1→EC LII own−other Δw (p) |
+|---|---|---|---|---|---|
+| hyL_s202 | +1.39 (1.00) | +0.45 (0.83) | +0.36 (0.83) | +0.043 (0.0005) | +0.0011 mV (0.17) |
+| hyN_s202 | +1.38 (1.00) | +0.41 (0.83) | +0.49 (1.00) | +0.031 (0.0005) | 0 (no learning) |
+| hyL_s303 | +1.36 (1.00) | +0.46 (0.92) | +0.43 (1.00) | +0.015 (0.004) | +0.0015 mV (0.066) |
+| hyN_s303 | +1.37 (1.00) | +0.40 (1.00) | +0.49 (0.83) | +0.009 (0.016) | 0 (no learning) |
+
+z: all p ≤ 0.0005. Decoder = rate+timing accuracy, chance 0.33. Mean CA1 → EC LII Δw is
++0.004 mV on w_init 0.30 (about 1.4%); L-LTP fraction own 0.019/0.014 vs other 0.021/0.013.
+
+Result: **no learned association in EC at 1%.** Learning and no-learning twins are equal in EC
+LII, EC LV and mPFC (differences ≤ 0.13 z, both directions). The learned CA1 → EC LII weights
+change by about 1% and are not memory-specific (p 0.17 and 0.07). So the memory identity seen
+in EC comes from the drive and the group wiring, not from consolidation (as WORKLOG §18).
+G2 passes in the no-learning twin `hyN_s202` (p 0.0005): G2 here also measures wiring.
+Not checked: a post-lesion recall probe in EC itself (the probe cues mPFC only); 12%.
+
+## 22. Sleep learning without the wiring shortcut: gate fixed before the runs (2026-11-18)
+
+Question: does sleep (STC + mPFC Hebbian) put memory-specific weights into cortex when the
+wiring gives cortex no identity? §21: with group wiring, learning added nothing measurable.
+
+Config: the §21 hybrid flags (`out/em/hy.base`) with `--ca1-ec-group-frac 0 --cortex-group-frac 0`
+(CA1 → EC LII, CA1 → EC LV, EC LII → EC LV, EC LV → mPFC uniformly random). `rwL` = learning on;
+`rwN` = the same plus `--no-stc-hook --no-mpfc-assoc`. Seeds 202, 303. Nothing else changes.
+
+Gate (written before any `rw` run):
+1. Readout validity (positive control, done on `hyL_s202/303`): `ec_weight_readout.py --plant`
+   detects a planted own-synapse trace of 0.002 mV (0.7% of w_init) at p 0.0025 / 0.0005;
+   a random plant of 0.01 mV gives p 0.18 / 0.06 (fails, as it must). **PASS.**
+   (G2 could not see 1.0 mV, §20, so G2 is not a gate here.)
+2. Shortcut removed (validity): in `rwN`, EC LV and mPFC home-group z has p ≥ 0.01 on both seeds.
+   If not, the wiring still carries identity and the run does not test learning.
+3. **Primary: learning happens and is memory-specific** = in `rwL`, CA1 → EC LII own−other Δw
+   > 0 with p < 0.01 on both seeds. Fail on either seed = no specific sleep learning.
+4. Secondary (descriptive, no gate): decoder accuracy in EC LII, EC LV, mPFC, `rwL` vs `rwN`;
+   G2.
+
+Prediction (before the runs): gate 3 fails. Reason: CA1 PYR fires on almost every ripple
+(CLAUDE.md), so CA1 → EC co-activity does not depend on the memory (§21: L-LTP own 0.019 vs
+other 0.021).
+
+Result (runs 19:09–19:46, about 18 min each, 2 in parallel):
+
+| run | CA1 z | EC LII z (dec) | EC LV z (p) (dec) | mPFC z (p) (dec) | G2 (p) | CA1→EC LII own−other Δw (p) |
+|---|---|---|---|---|---|---|
+| rwL_s202 | +0.65 | +1.41 (1.00) | −0.09 (0.82) (0.25) | −0.05 (0.74) (0.17) | −0.003 (0.70) | −0.0002 mV (0.69) |
+| rwN_s202 | +0.67 | +1.41 (1.00) | −0.05 (0.55) (0.42) | −0.02 (0.48) (0.33) | −0.002 (0.73) | 0 (no learning) |
+| rwL_s303 | +0.59 | +1.37 (1.00) | −0.12 (0.96) (0.50) | −0.02 (0.33) (0.08) | +0.000 (1.0) | −0.0005 mV (0.97) |
+| rwN_s303 | +0.66 | +1.36 (1.00) | −0.10 (0.91) (0.42) | −0.07 (0.50) (0.08) | +0.017 (0.04) | 0 (no learning) |
+
+dec = rate+timing decoder accuracy, chance 0.33. Null SD of the weight readout here: 0.0003 mV
+(smaller than in §21, so this test is more sensitive). Mean Δw +0.003 mV (1% of w_init);
+L-LTP own 0.016/0.017 vs other 0.017/0.021.
+
+Gate:
+1. Readout validity: PASS (above).
+2. Shortcut removed: **PASS.** `rwN` EC LV and mPFC z p ≥ 0.48 on both seeds.
+3. Primary: **FAIL on both seeds** (own−other Δw −0.0002 / −0.0005 mV, p 0.69 / 0.97).
+   The prediction held.
+
+Result: **sleep produces no memory-specific learning at 1%.** The weights change by about 1%,
+and own and other memories get the same change (other even slightly more). Without the group
+wiring, cortex loses all identity: EC LV and mPFC are at chance in the decoder too, in both
+learning and twin runs, although EC LII decodes at 1.00. So two things are missing:
+(a) a learning signal that depends on the memory (likely cause: CA1 fires on almost every
+ripple, path 2), and (b) transmission from EC LII to EC LV through random wiring.
+Not checked: (b)'s cause; CA1 active fraction per ripple (path 2 measures it first).
+
+## 23. Path 2: a sparse CA1 during ripples, so sleep learning can be memory-specific (2026-11-18)
+
+Measured first (§22 runs, SWR windows, cell active = ≥ 1 spike): CA1 PYR is active 0.67 / 0.53
+per ripple (`rwL_s202/303`; min 0.26). Own-memory cells 0.71 vs other 0.65 (s202), 0.59 vs 0.50
+(s303): only 1.1–1.2×. So CA1 → EC co-activity barely depends on the memory.
+
+Risk found in the code (`run_stc_hook`): the rule is pair STDP on the LAST spike of each cell in
+the window (dt = t_post − t_pre − delay; sign sets LTP or LTD). EC LII spikes come mostly from
+its own place-field drive, not from CA1, so the sign may be random for own and other synapses
+alike. Then a sparse CA1 alone will not help, and the rule must change (path 3).
+
+Knob: `--schaffer-w-scale S` (exists; scales CA3 → CA1 PYR only, CA1 basket drive unchanged).
+
+Sweep (step A): `rw` config, learning on, seed 202, `--n-swr 6`, S ∈ {1.0, 0.7, 0.5, 0.35}.
+Gate fixed before the runs:
+1. Sparsity: pick the largest S with CA1 active 0.10–0.30 per ripple and own/other ≥ 2.
+   If no S reaches this, path 2 with this knob fails; next = a CA1 inhibition knob.
+2. Replay intact: CA3 home-group z at that S within 0.2 of S = 1.0.
+3. Primary (step B, full 12 SWR, seeds 202 + 303, learning vs twin): same as §22 gate 3,
+   CA1 → EC LII own−other Δw > 0 at p < 0.01 on both seeds.
+Prediction: gate 1 can pass; gate 3 fails because of the STDP timing risk above.
+
+Step A result (seed 202, 6 SWR, learning on; runs 19:56–20:28):
+
+| S | CA1 active / ripple (min) | own | other | own/other | CA3 z | CA1 z | own−other Δw (p) |
+|---|---|---|---|---|---|---|---|
+| 1.0 | 0.63 (0.33) | 0.68 | 0.60 | 1.13 | +1.17 | +0.72 | +0.046 µV (0.056) |
+| 0.7 | 0.32 (0.10) | 0.37 | 0.29 | 1.28 | +1.18 | +0.46 | +0.086 µV (0.0015) |
+| 0.5 | 0.22 (0.04) | 0.29 | 0.19 | 1.55 | +1.10 | +0.66 | +0.068 µV (0.005) |
+| 0.35 | 0.12 (0.01) | 0.14 | 0.11 | 1.29 | +1.10 | +0.53 | −0.007 µV (0.70) |
+
+(`ec_weight_readout.py` now prints µV.) Mean Δw only +0.1–0.3 µV: with 6 SWR (12 events) no
+synapse reaches L-LTP (`--prp-threshold 14`), so this is E-LTP STDP only.
+
+Gate:
+1. Sparsity: **FAIL as written.** The 0.10–0.30 range is reached (S 0.5 and 0.35), but own/other
+   never reaches 2 (max 1.55 at S 0.5).
+2. Replay intact: PASS at all S (CA3 z 1.10–1.18).
+3. Not run (gate 1 failed).
+
+Result: **a sparser CA1 does make sleep learning memory-specific, but the effect is tiny.**
+At S 0.7 and 0.5 own−other Δw is significant (p 0.0015, 0.005); at S 1.0 it is not (p 0.056).
+My prediction (STDP sign random → no specificity) was wrong in direction, right in size: the
+effect is +0.07–0.09 µV, about 0.03% of w_init (300 µV); one seed, 6 SWR.
+Why own/other stays ≤ 1.55: sparsity is not the limit. A CA1 cell gets only 70% of its Schaffer
+inputs from its home group (`--schaffer-group-frac 0.7`), so it also fires for other memories.
+At S 0.35 selectivity drops again (too few spikes). Not checked: other seeds; 12 SWR.
+
+Step A2 (gate fixed before the runs): raise CA3 → CA1 grouping. Same as step A at S 0.5
+(seed 202, 6 SWR, learning on), with `--schaffer-group-frac` 0.9 and 1.0 (was 0.7).
+Gate: the step A gate 1 (CA1 active 0.10–0.30, own/other ≥ 2) and gate 2 (CA3 z within 0.2 of
+step A S 1.0, +1.17). If a value passes, step B (12 SWR, 2 seeds, learning vs twin) uses it.
+Prediction: own/other rises above 2 at 1.0; own−other Δw stays below 1 µV (no L-LTP in 6 SWR).
+
+Step A2 result: **no effect, by construction.** `sg09`/`sg10` give exactly the `sw050` numbers.
+Cause (log + `ca3_sup/group_ids` (10, 264)): a CA3 group has 264 cells, and `grouped_fixed_connect`
+clamps k_home to the group size. With `--schaffer-k 500`, a CA1 cell already takes all 264 home
+cells at frac 0.7 (target 350). So **the real home share is 264/500 = 53% at any frac ≥ 0.53**,
+not 70% as the flag suggests (also for DEEP: 66/125). Earlier WORKLOG text that says "70% home"
+for Schaffer at 1% is wrong in the same way.
+
+Step A3 (gate fixed before the runs): lower the in-degree so the home share rises:
+`--schaffer-k 300 --schaffer-group-frac 1.0` (home 264/300 = 88%) and `--schaffer-k 264
+--schaffer-group-frac 1.0` (100%). Weights scale by K_default/K, so the mean drive is kept.
+S 0.5, seed 202, 6 SWR, learning on. Same gate as A2.
+
+Step A3 result:
+
+| run | home share | CA1 active (min) | own | other | own/other | CA3 z | own−other Δw (p) |
+|---|---|---|---|---|---|---|---|
+| sw050 (k 500) | 53% | 0.22 (0.04) | 0.29 | 0.19 | 1.55 | +1.10 | +0.068 µV (0.005) |
+| sk300 | 88% | 0.17 (0.06) | 0.26 | 0.12 | 2.11 | +1.03 | +0.153 µV (0.0005) |
+| sk264 | 100% | 0.16 (0.05) | 0.26 | 0.12 | 2.26 | +1.17 | +0.215 µV (0.0005) |
+
+Gate: **PASS for both** (active 0.10–0.30, own/other ≥ 2, CA3 z within 0.2 of +1.17).
+Specificity of the weight change rises with CA1 selectivity (0.07 → 0.15 → 0.22 µV), but it
+is still about 0.07% of w_init: 6 SWR, no L-LTP. Step B uses `sk264`
+(`--schaffer-w-scale 0.5 --schaffer-k 264 --schaffer-group-frac 1.0`): best ratio, CA3 intact.
+
+Step B (gate = step A gate 3, fixed above): `rw` config + the sk264 flags, 12 SWR, seeds 202 and
+303, learning (`p2L`) vs twin (`p2N`, `--no-stc-hook --no-mpfc-assoc`). Descriptive: L-LTP own
+vs other, EC LV / mPFC decoder vs twin.
+
+Step B result (runs 20:54–21:37):
+
+| run | CA1 active | own/other | EC LV dec | mPFC dec | G2 (p) | own−other Δw (p) | L-LTP own / other |
+|---|---|---|---|---|---|---|---|
+| p2L_s202 | 0.16 | 2.06 | 0.58 | 0.33 | +0.045 (0.0005) | +0.468 µV (0.0005) | 0.007 / 0.007 |
+| p2N_s202 | 0.18 | 2.15 | 0.33 | 0.42 | +0.016 (0.045) | 0 | — |
+| p2L_s303 | 0.18 | 2.47 | 0.33 | 0.50 | +0.023 (0.035) | +0.417 µV (0.0125) | 0.006 / 0.007 |
+| p2N_s303 | 0.21 | 2.16 | 0.08 | 0.42 | +0.033 (0.0035) | 0 | — |
+
+dec = rate+timing decoder, chance 0.33. CA3 z +1.09–1.15, EC LII z +1.37–1.41 (all p 0.0005);
+EC LV and mPFC home-group z ≈ 0 (p ≥ 0.24) in all four runs.
+
+Gate 3: **FAIL, narrowly.** s202 p 0.0005; s303 p 0.0125 (> 0.01). Fixed rule: fail on either seed.
+
+Result: with a selective CA1, sleep learning is memory-specific in direction on both seeds
+(+0.47 / +0.42 µV, 7× the step A size), but it is small (0.15% of w_init; mean Δw +1.1–1.4 µV)
+and does not reach cortex (EC LV, mPFC decoders and z at chance, learning = twin; G2 mixed).
+**L-LTP capture is not specific (own 0.007 = other 0.007)**, so all specificity comes from E-LTP.
+Likely cause, from `run_stc_hook`: the tag is set from |Δw|, so an LTD pairing also tags a
+synapse, and capture then raises it × 1.3. (A second cause written here first, "every EC LII
+cell fires in every ripple", was wrong: see §24.) Not checked directly. This is path 3.
+
+## 24. Path 3: make L-LTP capture memory-specific (2026-11-19)
+
+Data first (`p2L_s202`, `stc/`): 57–91 of 1000 EC LII cells fire per ripple event (6–9%), not
+all. Only 2.1% of EC cells reach the PRP threshold (`--prp-threshold 14`; median pool 0). Capture
+starts at event 16 of 24. With 3 memories, a memory gets 8 of the 24 events (4 epochs × fwd+rev),
+so **a cell that fires only for its own memory can never reach 14**. Only cells that fire for
+several memories can capture: the least specific ones. This is a second cause, next to the tag
+sign (§23).
+
+Two changes, tested separately and together:
+1. New opt-in flag `--stc-ltp-tag-only`: the tag is set only by an LTP pairing (Δw ≥ tag
+   threshold). Default off: the old |Δw| rule, so S0 is unchanged.
+2. `--prp-threshold 6` (existing flag; ≤ 8, so a cell selective for one memory can capture).
+
+Config: §23 step B (`rw` + `--schaffer-w-scale 0.5 --schaffer-k 264 --schaffer-group-frac 1.0`),
+12 SWR, seeds 202 and 303. Twins = `p2N_s202/303` (no plasticity: the new flags change nothing
+there). Runs: `p3T` = change 1; `p3TP` = changes 1 + 2.
+Gate (fixed before the runs), per variant:
+1. Primary: CA1 → EC LII own−other Δw > 0 at p < 0.01 on both seeds.
+2. Capture is specific: L-LTP fraction own > other on both seeds.
+3. Size: own−other Δw ≥ 10× the §23 step B value (≥ 4 µV) on both seeds.
+4. Descriptive: EC LV, mPFC decoder vs twin; G2.
+Prediction: `p3T` passes 1 but not 2 or 3 (few cells reach PRP 14); `p3TP` passes 1–3.
+
+Result (runs 11:29–12:03; S0 after the new flag: `8631eb29…`, unchanged):
+
+| run | own−other Δw (p) | L-LTP own / other | cells ≥ PRP thr | L-LTP synapses | mPFC z (p) | G2 (p) |
+|---|---|---|---|---|---|---|
+| p2L_s202 (§23, old rule) | +0.47 µV (0.0005) | 0.007 / 0.007 | 0.021 | — | −0.01 (0.58) | +0.045 (0.0005) |
+| p3T_s202 | +0.32 µV (0.0005) | 0.004 / 0.005 | 0.019 | 240 | −0.01 (0.55) | −0.002 (1.0) |
+| p3T_s303 | +0.46 µV (0.0015) | 0.004 / 0.005 | 0.019 | 240 | −0.10 (0.93) | +0.000 (1.0) |
+| p3TP_s202 | +1.22 µV (0.0005) | 0.038 / 0.031 | 0.139 | 1670 | +0.14 (0.0015) | +0.036 (0.001) |
+| p3TP_s303 | +2.34 µV (0.0005) | 0.030 / 0.017 | 0.135 | 1066 | −0.05 (0.44) | −0.004 (1.0) |
+
+CA3 z +1.09–1.15 and EC LII z +1.37–1.41 in all runs (p 0.0005). EC LV home z ≈ 0 and EC LV
+decoder at chance (0.17–0.42) in all runs; mPFC decoder 0.25–0.58.
+
+Gate:
+- `p3T` (LTP-only tag): 1 PASS; 2 FAIL (own 0.004 < other 0.005); 3 FAIL (0.3–0.5 µV).
+- `p3TP` (LTP-only tag + PRP 6): 1 PASS; **2 PASS** (own 0.038 > 0.031, 0.030 > 0.017);
+  3 FAIL (1.2 / 2.3 µV, target ≥ 4 µV).
+Prediction: right for `p3T`; for `p3TP` right on 1–2, wrong on 3 (size).
+
+Result: **with both fixes, capture itself becomes memory-specific on both seeds, and the specific
+weight change is 3–5× the §23 value** (+1.2 / +2.3 µV, 0.4–0.8% of w_init). It is still small,
+and it still does not reach cortex: EC LV is at chance in every run, and the one mPFC signal
+(`p3TP_s202` z +0.14, G2 p 0.001) does not replicate on s303.
+Odd, not checked: `p3T` has exactly 240 L-LTP synapses on both seeds.
+Open: the size limit (capture × 1.3 on 3% of synapses, w_max 1.5 × w_init) and the
+EC LII → EC LV transfer (§22 (b)), which blocks any cortical readout.
+
+## 25. Why EC LII does not reach EC LV (diagnosis, 2026-11-19)
+
+Measured: fraction of cells with ≥ 1 spike, ripple windows (300–420, 600–720 ms) vs equal
+windows outside ripples (100–220, 850–970 ms), mean over 24 windows.
+
+| run | CA1 in / out | EC LII in / out | EC LV in / out | EC LV rate in / out |
+|---|---|---|---|---|
+| rwL_s202 (§22) | 0.67 / 0.46 | 0.077 / 0.004 | 0.185 / 0.166 | 2.4 / 2.3 Hz |
+| p3TP_s202 (§24) | 0.17 / 0.17 | 0.070 / 0.002 | 0.157 / 0.152 | 2.2 / 2.1 Hz |
+| p3TP_s303 (§24) | 0.16 / 0.11 | 0.067 / 0.001 | 0.149 / 0.141 | 2.1 / 2.0 Hz |
+| hyL_s202 (§21, grouped) | 0.54 / 0.38 | 0.085 / 0.003 | 0.192 / 0.161 | 2.5 / 2.2 Hz |
+
+Result: **EC LV does not respond to ripples.** It fires the same in and out of ripples
+(+1–3 points), so its spikes come from its own drive (I_e ~ N(3, 1.5) − 1), not from EC LII.
+Estimated ripple volley per EC LV cell (in-degree × active fraction × weight, defaults in
+`build_ec_lv`): EC LII 20 × 0.07 × 0.8 mV ≈ 1.1 mV; CA1 30 × 0.17 × 0.45 mV ≈ 2.3 mV
+(p3TP; ≈ 9 mV at CA1 0.67). The rest-to-threshold gap is 15–24 mV (code comment). So the
+EC LII share is about 1 mV, 15–20× below threshold: EC LII is sparse (7% per ripple), and
+K 20 × 0.8 mV cannot carry a sparse code. With group wiring (`hyL`), the small bias was enough
+for EC LV z +0.45; with random wiring it is lost in the intrinsic firing.
+Not checked: the real volley (V_m recordings); why CA1 in `p3TP_s202` is not ripple-locked
+(0.17 / 0.17; s303 is: 0.16 / 0.11).
+Fix candidates (none run): an opt-in EC LII → EC LV weight / in-degree (no flag exists now), so
+that one memory's EC LII cells sum to near threshold; or less intrinsic EC LV drive
+(`--ec-lv-ie-shift`, exists), so ripple input stands out.
+
+Sweep (gate fixed before the runs). New opt-in flags `--w-eclii-lv W`, `--eclii-lv-k K`
+(default: the build values 0.8 mV, 20). Config: `p3TP` (§24: `rw` + sk264 flags +
+`--stc-ltp-tag-only --prp-threshold 6`), 12 SWR, seed 202, learning on. `--eclii-lv-k 60` and
+W ∈ {1.6, 2.4, 3.2, 4.0} mV: estimated EC LII volley 60 × 0.07 × W ≈ 6.7, 10, 13, 17 mV
+(reference: `p3TP_s202`, K 20, W 0.8, ≈ 1.1 mV).
+Gate:
+1. Ripple-locked: EC LV active in ripple − out ≥ 0.05.
+2. Not saturated: EC LV active in ripple ≤ 0.40.
+3. Identity reaches EC LV: EC LV decoder (rate+timing or counts) p < 0.01.
+Pick the smallest W that passes 1–3. That W then needs seed 303 and a learning vs twin test
+(not part of this sweep). Descriptive: mPFC decoder, CA3/EC LII z (must stay as in p3TP).
+Prediction: 1–2 pass from W 2.4; 3 passes at W ≥ 2.4 (a random projection of a 7%-sparse code
+with 60 inputs carries the memory).
+
+Sweep result (runs 18:55–19:30; S0 after the new flags: `8631eb29…`, unchanged):
+
+| W (mV) | EC LV active in / out | EC LV dec r+t / counts (p) | mPFC active in / out | mPFC dec r+t / counts (p) | G2 (p) | own−other Δw (p) |
+|---|---|---|---|---|---|---|
+| 0.8, K 20 (`p3TP_s202`) | 0.157 / 0.152 | 0.42 / 0.08 (0.11 / 0.90) | — | 0.25 / 0.00 | +0.036 (0.001) | +1.22 µV (0.0005) |
+| 1.6 | 0.211 / 0.151 | 0.58 / 1.00 (0.0035 / 0.0005) | 0.211 / 0.116 | 0.33 / 0.42 (0.32 / 0.18) | +0.014 (0.029) | +2.68 µV (0.0005) |
+| 2.4 | 0.280 / 0.149 | 1.00 / 1.00 (0.001 / 0.0005) | 0.430 / 0.111 | 0.83 / 0.50 (0.001 / 0.038) | +0.018 (0.006) | +2.39 µV (0.0005) |
+| 3.2 | 0.343 / 0.152 | 1.00 / 1.00 (0.001 / 0.0005) | 0.543 / 0.111 | 0.67 / 0.92 (0.016 / 0.0005) | +0.015 (0.036) | +2.21 µV (0.0005) |
+| 4.0 | 0.434 / 0.151 | 0.92 / 1.00 (0.001 / 0.0005) | 0.689 / 0.110 | 0.67 / 0.67 (0.016 / 0.007) | +0.003 (0.28) | +2.98 µV (0.0005) |
+
+K 60 for W 1.6–4.0. CA3 z +1.08–1.13 and EC LII z +1.41 in all (p 0.0005).
+
+Gate: W 1.6, 2.4 and 3.2 pass 1–3; W 4.0 fails 2 (EC LV 0.43 active). **Smallest passing W = 1.6.**
+Prediction: wrong in the good direction (passes from 1.6, not 2.4).
+
+Result: **with a stronger EC LII → EC LV input, EC LV locks to ripples and carries the memory**
+(decoder 1.00 from W 1.6; at default it is at chance). From W 2.4 the memory also reaches mPFC
+(decoder 0.83 p 0.001 at 2.4; 0.92 counts p 0.0005 at 3.2), but mPFC then fires in 43–69% of
+cells per ripple. Caution: this is transfer, not learning. The EC LV identity can come straight
+from the EC LII drive. One seed only.
+Next (gate fixed above): W 1.6 on seed 303, and learning vs twin on both seeds. W 2.4 is the
+smallest value that reaches mPFC, so it is worth the same test.
+
+## 26. Does cortex learn, or only relay? Learning vs twin with the EC LV fix (2026-11-20)
+
+Config: §25 sweep (`p3TP` flags + `--eclii-lv-k 60`), W = `--w-eclii-lv` 1.6 and 2.4, seeds 202
+and 303. Learning `lvW_sS` (s202 = `lv16`, `lv24` from §25); twin `lvNW_sS` = the same plus
+`--no-stc-hook --no-mpfc-assoc`. The real test of consolidation is recall after the lesion
+(cortex without the hippocampus), so the primary readout is G2 here, against the twin.
+Gate (fixed before the twin runs), per W:
+1. **Primary: cortex learned.** G2 specificity learning > twin on both seeds, and learning G2
+   p < 0.01 on both seeds.
+2. CA1 → EC LII own−other Δw p < 0.01 on both seeds (learning runs).
+3. Descriptive: EC LV / mPFC sleep decoder, learning vs twin.
+Prediction: 2 passes; 1 fails (§20: G2 misses traces below 1 mV at 1%; §21–22: G2 equal in
+twins); 3 equal in learning and twin (identity comes from the drive).
+
+**Result (2026-11-20).** No `--g2-fixed-cue` in `rw.base`, so the G2 trial-label p is valid here.
+
+| W | seed | G2 spec learning (p) | G2 spec twin (p) | CA1→EC own−other Δw (p) | mPFC active in SWR L / twin |
+|---|---|---|---|---|---|
+| 1.6 | 202 | +0.014 (0.029) | −0.010 (1.00) | +2.68 µV (0.0005) | — |
+| 1.6 | 303 | +0.013 (0.032) | +0.003 (0.23) | +2.22 µV (0.0005) | — |
+| 2.4 | 202 | **+0.018 (0.0055)** | +0.002 (0.34) | +2.39 µV (0.0005) | 0.43 / 0.34 |
+| 2.4 | 303 | **+0.036 (0.0005)** | −0.001 (1.00) | +2.68 µV (0.0005) | 0.39 / 0.35 |
+
+1. Primary: **PASS at W 2.4** (learning > twin and p < 0.01 on both seeds). FAIL at W 1.6
+   (learning > twin on both seeds, but p 0.03). The prediction "1 fails" was wrong at W 2.4.
+2. Δw: PASS on all 4 learning runs (still about 2.5 µV; the §24 size target of 4 µV is not met).
+3. Sleep decoder: EC LV counts 1.00 in learning and twin alike (identity comes from the drive,
+   as predicted). mPFC decoder is mixed and not higher in learning (s202 W2.4: L 0.83/0.50,
+   twin 0.75/0.83). So the sleep code is relayed; only the post-lesion recall differs.
+
+Caveats, not yet tested:
+- The twin turns off two things: the STC hook (CA1→EC LII) and mPFC association learning.
+  The G2 effect can come from either. CA1→EC Δw is only about 2.5 µV, so mPFC association
+  learning is the more likely carrier. Next control: STC-only-off and mPFC-assoc-only-off
+  twins at W 2.4, both seeds.
+- mPFC is 39–43% active per ripple at W 2.4 (twin 34–35%). Learning raises mPFC activity,
+  so part of the G2 gain may be gain, not specificity. G2 is an own−other contrast, so a pure
+  gain change would not pass alone, but this is not checked.
+- 1% only, 2 seeds, effect sizes small (+0.018, +0.036). Pilot until 12%.
+
+## 27. Which rule carries post-lesion recall? Split twins at W 2.4 (2026-11-20)
+
+The §26 twin turns off two rules at once. `--no-stc-hook` skips CA1→EC LII tag-and-capture.
+`--no-mpfc-assoc` skips EC LV→mPFC association and the mPFC recurrent learning (same gate,
+`replay_scaled.py` ~6212). Split twins, §26 W 2.4 config, seeds 202 and 303:
+- `lvA24_sS` = `--no-stc-hook` only (mPFC learns, CA1→EC fixed).
+- `lvB24_sS` = `--no-mpfc-assoc` only (CA1→EC learns, mPFC fixed).
+
+Gate (fixed before the runs). A rule "carries recall" if its run, with only that rule on,
+gives G2 specificity > the full twin (§26) and G2 p < 0.01 on both seeds.
+Prediction: A passes, B fails. Reason: CA1→EC Δw is only about 2.5 µV, and mPFC learning is
+directly on the readout path. If A passes and B fails, the STC hook adds nothing to recall:
+this is the §0 claim-1 test (blocking capture must remove consolidation) run in reverse, and
+it fails claim 1 for this config.
+
+**Result (2026-11-20).** G2 specificity (perm p), W 2.4:
+
+| seed | full learning (§26) | A: mPFC only (`--no-stc-hook`) | B: STC only (`--no-mpfc-assoc`) | full twin (§26) |
+|---|---|---|---|---|
+| 202 | +0.018 (0.0055) | +0.013 (0.033) | +0.005 (0.060) | +0.002 (0.34) |
+| 303 | +0.036 (0.0005) | −0.003 (0.86) | +0.006 (0.067) | −0.001 (1.00) |
+
+- Gate: **neither rule carries recall alone.** A fails (p 0.03 / 0.86). B fails (p 0.06 / 0.07).
+  Only the two rules together pass. The prediction (A passes, B fails) was wrong.
+- B is above the twin on both seeds (+0.005/+0.006 vs +0.002/−0.001), but not at p < 0.01.
+  CA1→EC Δw in B is +2.46/+2.39 µV (p 0.0005), the same as with mPFC learning on.
+- A is not consistent across seeds (+0.013 vs −0.003).
+- On s303 the full effect (+0.036) is larger than A + B (+0.003). This suggests the rules
+  interact: mPFC learning needs the CA1→EC trace. One run per cell, so this is not shown.
+- mPFC activity per ripple: A 0.39/0.37, B 0.34/0.34, full 0.43/0.39, twin 0.34/0.35.
+  mPFC learning raises mPFC activity; the CA1→EC rule alone does not.
+- Claim 1 (blocking capture removes consolidation) is **not falsified** here: turning off the
+  STC hook (A) removes the passing recall on both seeds.
+
+Limits: 1 run per cell, 2 seeds, small effects. The G2 noise across seeds is not known, so
+"interaction" vs "noise" needs more seeds (for example 4 seeds × full/A/B/twin at W 2.4).
+
+## 28. Interaction or noise? 2 more seeds of full / A / B / twin at W 2.4 (2026-11-20)
+
+Same config as §26–27, seeds 404 and 505. Names: `lv24_sS` (full), `lvA24_sS`, `lvB24_sS`,
+`lvN24_sS` (twin). With §26–27 this gives 4 seeds × 4 conditions.
+
+Gate (fixed before the runs), on G2 specificity per seed:
+1. Replication: full learning passes G2 (p < 0.01, > twin) on both new seeds.
+2. Interaction: I = full − A − B + twin. Real if I > 0 on 4/4 seeds and the bootstrap 95% CI
+   of mean I over the 4 seeds (10,000 resamples) lies above 0.
+   (4/4 signs alone is p 0.06 one-sided; this is weak and is reported as weak.)
+3. Descriptive: A and B each vs twin, sign count over 4 seeds.
+Prediction: 1 passes on 1 of 2 new seeds; 2 fails (I > 0 on 3/4 seeds, CI includes 0).
+
+**Result (2026-11-20, runs 17:00–18:16).** G2 specificity (perm p), W 2.4:
+
+| seed | full | A: mPFC only | B: STC only | twin | I = full − A − B + twin | CA1→EC Δw full (p) |
+|---|---|---|---|---|---|---|
+| 202 | +0.018 (0.0055) | +0.013 (0.033) | +0.005 (0.060) | +0.002 (0.34) | +0.002 | +2.39 µV (0.0005) |
+| 303 | +0.036 (0.0005) | −0.003 (0.86) | +0.006 (0.067) | −0.001 (1.00) | +0.032 | +2.68 µV (0.0005) |
+| 404 | +0.010 (0.047) | +0.000 (1.00) | +0.001 (0.35) | +0.000 (1.00) | +0.009 | +2.39 µV (0.0005) |
+| 505 | +0.053 (0.0005) | +0.017 (0.0070) | −0.004 (0.90) | +0.000 (1.00) | +0.040 | +0.55 µV (0.073) |
+
+Mean I +0.021, bootstrap 95% CI [+0.006, +0.036] over 4 seeds.
+
+Gate:
+1. Replication: **1 of 2.** s505 PASS (p 0.0005); s404 FAIL (p 0.047, > twin). Prediction right.
+2. Interaction: **PASS as written** (I > 0 on 4/4, CI above 0). Prediction wrong. Weak: 4 seeds,
+   s202 I is only +0.002, and a bootstrap over 4 values is narrow by construction.
+3. A vs twin: higher on 3/4 (passes alone on s505, p 0.007). B vs twin: higher on 2/4.
+
+Over all 4 seeds: full learning passes G2 on 3/4 and is above its twin on 4/4. Twin passes 0/4.
+A passes 1/4, B 0/4.
+
+Against the §27 idea "mPFC learning needs the CA1→EC trace": on s505 the full G2 is the
+largest (+0.053) but the CA1→EC Δw is not specific there (+0.55 µV, p 0.07). So the interaction
+does not go through a memory-specific CA1→EC weight on that seed. Mechanism unknown. One
+candidate, not checked: STC raises all CA1→EC weights (mean Δw > 0), so EC LII and then EC LV /
+mPFC fire more during sleep, and mPFC Hebbian learning gets more co-firing events (§17: the
+number of co-firing events is the limit).
+
+Result: **sleep learning gives post-lesion recall on 3 of 4 seeds, and needs both rules.** This is
+a 1% pilot with small effects. The cause of the interaction is open.
+
+## 29. Why do the two rules work together? mPFC co-firing in sleep, full vs A (2026-11-20)
+
+Candidate from §28: STC raises all CA1→EC weights (mean Δw > 0), so cortex fires more in sleep,
+and mPFC Hebbian learning gets more co-firing events. No new runs: the §26–28 files, full (`lv24*`)
+vs A (`lvA24*`, STC off, mPFC learns), seeds 202/303/404/505.
+Measures (sleep only, 12 epochs, SWR windows): EC LII / EC LV / mPFC active fraction;
+`mpfc_recurrent/n_coactive` summed over 24 events (co-active recurrent synapses, the hook's own
+learning events); recurrent Δw (w_final − `epoch_weights/mpfc_rec_pre`) on synapses inside one
+G2 assembly minus synapses between assemblies.
+Prediction / gate (fixed before the count). The candidate holds only if all three hold, each
+full > A on ≥ 3/4 seeds:
+1. EC LV and mPFC active per SWR. If this fails, the candidate is rejected.
+2. Summed recurrent `n_coactive`.
+3. Within-minus-between assembly recurrent Δw.
+Descriptive: per seed, (full − A) in item 2 vs (full − A) in G2 (4 points, no test).
+
+**Result.** Full / A per seed (sleep SWR windows; Δw = recurrent mPFC, inside − between G2 assemblies):
+
+| seed | EC LV active | mPFC active | recurrent `n_coactive` | rec Δw in − betw (mV) | G2 assembly size | G2 |
+|---|---|---|---|---|---|---|
+| 202 | 0.280 / 0.271 | 0.430 / 0.392 | 12428 / 10488 | +0.30 / +0.38 | 23 / 12 | +0.018 / +0.013 |
+| 303 | 0.277 / 0.265 | 0.386 / 0.366 | 9500 / 8419 | +0.25 / +0.40 | 30 / 15 | +0.036 / −0.003 |
+| 404 | 0.265 / 0.268 | 0.375 / 0.376 | 9192 / 9066 | +0.46 / +0.22 | 14 / 14 | +0.010 / +0.000 |
+| 505 | 0.286 / 0.290 | 0.405 / 0.411 | 10866 / 11292 | +0.28 / +0.22 | 19 / 22 | +0.053 / +0.017 |
+
+EC LII active 0.066–0.073 in all runs (full ≈ A).
+
+Gate:
+1. EC LV and mPFC active, full > A: **2/4 (FAIL).** Candidate **rejected.**
+2. `n_coactive` full > A: 3/4 (404 by 1%).
+3. Recurrent Δw in − betw full > A: 2/4.
+Descriptive: s505 has the largest G2 gain (+0.036) with fewer co-active events in full than
+in A. The s303 gain (+0.039) comes with +13% events. No link across the 4 seeds.
+
+Result: **the interaction is not "more cortical activity → more Hebbian events".** Full and A
+have the same sleep activity on 2 of 4 seeds. The learned recurrent mPFC weights inside the
+assemblies are not larger in full. So the extra recall in full is not in these sleep measures.
+Not checked, remaining candidates:
+- After the lesion (`--lesion-eclv-mpfc`) CA1 → cortex and EC LV → mPFC are both cut, so only
+  the recurrent mPFC weights and the choice of assemblies can carry recall. Recurrent Δw inside
+  assemblies is not larger in full (item 3), so the choice of assemblies is the open candidate.
+- G2 assembly size differs (23 vs 12, 30 vs 15 on 202/303). The assemblies are picked from the
+  sleep activity, so this changes what G2 measures. The 4-seed data shows no link to G2.
+- Noise: §28 item 2 is weak (4 seeds).

@@ -1543,12 +1543,12 @@ def build_replay_network(
         # pattern_source="ec-lii": CA3 gets no direct pattern-specific
         # injection at all -- the encoding-direction drive is wired onto
         # EC LII instead, in main(), after build_ec_lii() runs.
-        if trigger_on and pattern_source == "ca3":
+        if trigger_on and pattern_source in ("ca3", "both"):
             make_replay_trigger(grp[0],  f_s, trigger_dur_ms=trigger_dur_ms,
                                 trigger_rate=trigger_rate, weight=trigger_weight)
             make_replay_trigger(grp[-1], r_s, trigger_dur_ms=trigger_dur_ms,
                                 trigger_rate=trigger_rate, weight=trigger_weight)
-        if scaffold_on and pattern_source == "ca3":
+        if scaffold_on and pattern_source in ("ca3", "both"):
             make_staggered_replay_drive(
                 grp, f_s, direction="forward",
                 inter_step_ms=scaffold_step_ms, drive_rate=scaffold_rate,
@@ -2472,7 +2472,7 @@ def completion_index(spk_times, spk_senders, cued, uncued, win_start, win_stop):
 def pattern_recall_specificity(mpfc_module, epoch_pattern, n_epochs, epoch_ms,
                                swr_wins, t_start, n_patterns, cue_frac,
                                trials_per_pattern=4, iti_ms=250.0, win_ms=80.0,
-                               n_perm=2000, seed=11):
+                               n_perm=2000, seed=11, fixed_cue=False, plant_dw=0.0):
     """Gate G2: after the hippocampal lesion, does a partial cue of pattern p's
     cortical assembly reactivate p's assembly rather than the others?
 
@@ -2518,15 +2518,46 @@ def pattern_recall_specificity(mpfc_module, epoch_pattern, n_epochs, epoch_ms,
         return dict(ok=False, reason=f"assemblies too small (min {msize} cells)")
     assemblies = [gids[c[np.argsort(-strength[c])][:msize]] for c in cand]
 
+    # --plant-trace: test-only positive control. Add plant_dw mV to every
+    # recurrent mPFC synapse inside one assembly, before the first cue.
+    n_planted = 0
+    if plant_dw > 0:
+        _c, _src, _tgt, _w = get_conns_between(mpfc_module.population,
+                                               mpfc_module.population)
+        lab = np.full(N, -1)
+        for q, A in enumerate(assemblies):
+            lab[A - g0] = q
+        a_, b_ = lab[np.asarray(_src) - g0], lab[np.asarray(_tgt) - g0]
+        inside = (a_ >= 0) & (a_ == b_)
+        _w = np.asarray(_w, dtype=float)
+        _w[inside] += plant_dw
+        sim.SetStatus(_c, "weight", _w)
+        n_planted = int(inside.sum())
+        _back = np.asarray(sim.GetStatus(_c, "weight"), dtype=float).reshape(-1)
+        if not np.allclose(_back, _w, atol=1e-5):
+            raise RuntimeError("--plant-trace: weights did not take effect")
+        print(f"  [plant-trace] +{plant_dw} mV on {n_planted} within-assembly synapses")
+
     order = []
     for _ in range(trials_per_pattern):
         order += list(rng.permutation(n_patterns))
     order = np.asarray(order)
     t_cues = t_start + iti_ms * np.arange(len(order))
+    # --g2-fixed-cue: one cue subset per pattern for all its trials, so a
+    # decoder can drop every cue cell and read only the cells the cue did
+    # not drive directly. Off: a new random subset per trial (old behaviour).
+    cue_sets = None
+    if fixed_cue:
+        n_cue = max(1, int(round(cue_frac * msize)))
+        cue_sets = [np.sort(rng.choice(A, size=n_cue, replace=False)) for A in assemblies]
     cued = []
     for k, q in enumerate(order):
-        c, _u = cortical_recall_probe(mpfc_module, assemblies[q], cue_frac,
-                                      float(t_cues[k]), rng=rng)
+        if cue_sets is not None:
+            c, _u = cortical_recall_probe(mpfc_module, cue_sets[q], 1.0,
+                                          float(t_cues[k]), rng=rng)
+        else:
+            c, _u = cortical_recall_probe(mpfc_module, assemblies[q], cue_frac,
+                                          float(t_cues[k]), rng=rng)
         cued.append(c)
     sim.Simulate(float(t_cues[-1] - sim.GetKernelStatus("biological_time")
                         + iti_ms))
@@ -2557,7 +2588,8 @@ def pattern_recall_specificity(mpfc_module, epoch_pattern, n_epochs, epoch_ms,
                 responses=Rt, baseline=base, cue_recall=cue_recall,
                 specificity=sp, specificity_mean=float(sp.mean()), p=float(p),
                 own=np.array([Rt[k, q] for k, q in enumerate(order)]),
-                assemblies=np.stack(assemblies))
+                assemblies=np.stack(assemblies), n_planted=n_planted,
+                cue_sets=(np.stack(cue_sets) if cue_sets is not None else None))
 
 
 def run_pattern_completion(cfg, n_threads, cue_fracs,
@@ -4074,6 +4106,9 @@ def run_stc_hook(
     w_max_struct     : float = 2.0,  # weight ceiling after structural potentiation
                                       # models AMPA-receptor clustering + spine growth
     struct_boost     : float = 0.25, # one-off weight boost at structural capture
+    # WORKLOG 24 (path 3): tag only LTP pairings. Default False keeps the old rule,
+    # where an LTD pairing also tags and capture then raises the synapse x1.3.
+    ltp_tag_only     : bool  = False,
 ) -> dict:
     """
     Run one STC update cycle after a completed SWR epoch.
@@ -4155,7 +4190,8 @@ def run_stc_hook(
     # Set/refresh tag ONLY for synapses with meaningful STDP coincidence.
     # tag_threshold filters out spurious low-amplitude delta_w from
     # temporally distant pairs that happen to both fire in the long SWR window.
-    active = np.abs(delta_w) >= tag_threshold
+    active = ((delta_w >= tag_threshold) if ltp_tag_only
+              else (np.abs(delta_w) >= tag_threshold))
     stc.tag[active]         = np.abs(delta_w[active])
     stc.tag_time_ms[active] = current_t_ms
 
@@ -4751,6 +4787,28 @@ def save_replay_hdf5(net, sim_ms, scale_label, outpath, bin_ms=10.0,
 
         h5.create_dataset("times_ms", data=times_ms)
 
+        # --save-epoch-weights: weight vectors after each epoch (n_epochs, n_syn)
+        _ew = net.get("epoch_weights")
+        if _ew:
+            gw = h5.create_group("epoch_weights")
+            for _k, _v in _ew.items():
+                if _v:
+                    gw.create_dataset(_k, data=np.stack(_v), **compress)
+            for _k, _v in (net.get("epoch_weights_pre") or {}).items():
+                gw.create_dataset(_k, data=_v, **compress)
+
+        # --ec-memories: which database memory each pattern stands for
+        _em = net.get("ec_memories")
+        if _em:
+            gm = h5.create_group("ec_memories")
+            gm.attrs["source"] = _em["source"]
+            gm.attrs["agent"] = _em["agent"]
+            _ms = sorted(_em["memories"], key=lambda m: m["slot"])
+            gm.create_dataset("slot", data=np.array([m["slot"] for m in _ms], dtype=np.int32))
+            _str = h5py.string_dtype("utf-8")
+            gm.create_dataset("id", data=[m["id"] for m in _ms], dtype=_str)
+            gm.create_dataset("text", data=[m["text"] for m in _ms], dtype=_str)
+
         # Gate G2: pattern-specific cortical recall after the lesion (SS33)
         _g2 = net.get("g2_recall")
         if _g2 and _g2.get("ok"):
@@ -4758,9 +4816,12 @@ def save_replay_hdf5(net, sim_ms, scale_label, outpath, bin_ms=10.0,
             for _k in ["order", "t_cues", "responses", "baseline", "cue_recall",
                        "specificity", "own", "assemblies"]:
                 g2.create_dataset(_k, data=np.asarray(_g2[_k]))
+            if _g2.get("cue_sets") is not None:
+                g2.create_dataset("cue_sets", data=np.asarray(_g2["cue_sets"]))
             g2.attrs["specificity_mean"] = _g2["specificity_mean"]
             g2.attrs["p"] = _g2["p"]
             g2.attrs["assembly_size"] = _g2["assembly_size"]
+            g2.attrs["n_planted"] = _g2.get("n_planted", 0)
 
         # --- per-population groups -------------------------------------------
         for h5_key, pop_key, spk_key in pop_map:
@@ -5004,6 +5065,10 @@ def save_replay_hdf5(net, sim_ms, scale_label, outpath, bin_ms=10.0,
             stc_grp.create_dataset("tag_final",    data=stc_hook.tag.astype(np.float32),          **compress)
             # Per-synapse EC neuron index (for tag occupancy grouping)
             stc_grp.create_dataset("post_idx",       data=stc_hook.post_idx.astype(np.int32),         **compress)
+            # Source CA1 GID per synapse, for the own-other weight readout (LLM step
+            # 3c). Only with --ec-memories, so the default export is unchanged.
+            if net.get("ec_memories") is not None:
+                stc_grp.create_dataset("pre_gid", data=np.asarray(stc_hook.pre_ids, dtype=np.int64), **compress)
             # Structural plasticity snapshots
             if stc_hook.struct_count is not None:
                 stc_grp.create_dataset("struct_count", data=stc_hook.struct_count.astype(np.int16),  **compress)
@@ -5156,6 +5221,13 @@ Dentate gyrus (Phase 6.2):
         help="Experiment (WORKLOG section 14): EC LV -> mPFC weight in mV. Default 1.8 "
              "(set for the old, 73%%-active EC LV).")
     parser.add_argument(
+        "--w-eclii-lv", type=float, default=None, metavar="W",
+        help="WORKLOG 25: EC LII -> EC LV weight in mV (default: build_ec_lv's 0.8). "
+             "At default, a ripple gives an EC LV cell about 1 mV from EC LII.")
+    parser.add_argument(
+        "--eclii-lv-k", type=int, default=None, metavar="K",
+        help="WORKLOG 25: EC LII -> EC LV in-degree (default: build_ec_lv's 20).")
+    parser.add_argument(
         "--ec-lv-ie-shift", type=float, default=0.0, metavar="X",
         help="Experiment (WORKLOG section 10): add X to every EC LV cell's I_e "
              "(e.g. -1). Default 0.")
@@ -5286,6 +5358,23 @@ Dentate gyrus (Phase 6.2):
              "(~1250 s wall per sim second at 12%%).")
     parser.add_argument("--g2-iti", type=float, default=250.0, metavar="MS",
                         help="Gate G2: interval between cue trials (ms).")
+    parser.add_argument(
+        "--g2-fixed-cue", action="store_true",
+        help="Gate G2: cue the same subset of each assembly on every trial "
+             "(exported as g2_recall/cue_sets), so a decoder can exclude all "
+             "cue cells. Default: a new random subset per trial.")
+    parser.add_argument(
+        "--plant-trace", type=float, default=0.0, metavar="DW",
+        help="Gate G2 positive control (test only): after the G2 assemblies are "
+             "chosen and before the first cue, add DW mV to every recurrent "
+             "mPFC synapse whose pre and post cells are in the same assembly. "
+             "Default 0 (off).")
+    parser.add_argument(
+        "--save-epoch-weights", action="store_true",
+        help="Export the mPFC recurrent and EC LV->mPFC weight vectors after "
+             "every epoch (epoch_weights/), indexed like mpfc_recurrent/pre_idx "
+             "and post_idx, plus mpfc_rec_pre (before any learning). Default: "
+             "final weights only.")
     parser.add_argument(
         "--cr-prime-rate", type=float, default=250.0, metavar="HZ",
         help="Tonic Poisson drive to mPFC after the lesion, holding cells near "
@@ -5462,7 +5551,7 @@ Dentate gyrus (Phase 6.2):
              "its own epochs. Needed for any engram/selectivity claim: with one "
              "pattern there is nothing to be selective ABOUT.")
     parser.add_argument(
-        "--pattern-source", choices=["ca3", "ec-lii"], default="ca3", metavar="SRC",
+        "--pattern-source", choices=["ca3", "ec-lii", "both"], default="ca3", metavar="SRC",
         help="Where the pattern-defining drive attaches (Phase 7). 'ca3' "
              "(default) is the original replay/consolidation direction: the "
              "trigger/scaffold inject pattern identity straight into CA3 SUP, "
@@ -5472,7 +5561,10 @@ Dentate gyrus (Phase 6.2):
              "injection at all, and a place-field-tuned drive (see "
              "--place-field-sigma) is wired onto EC LII instead, so CA3's "
              "assembly becomes a CONSEQUENCE of DG's own separation rather than "
-             "an externally given label. Requires --ec-lii.")
+             "an externally given label. 'both' (LLM step 3a hybrid) wires both "
+             "drives: the ec-lii place-field drive on EC LII and the ca3 "
+             "trigger/scaffold on CA3, so the hippocampal pattern comes from the "
+             "CA3 drive. Requires --ec-lii.")
     parser.add_argument(
         "--place-field-sigma", type=float, default=0.15, metavar="SIGMA",
         help="Only with --pattern-source ec-lii. Width (ring units, "
@@ -5509,6 +5601,14 @@ Dentate gyrus (Phase 6.2):
              "oddball/novelty-among-familiar design). After its debut it "
              "resumes cycling normally through all patterns. Unset (default) "
              "= no change, all patterns cycle evenly from epoch 0.")
+    parser.add_argument(
+        "--ec-memories", default=None, metavar="JSON",
+        help="LLM step 3a, option A. A memory file from llm/nous_export.py: "
+             "memory slot s is EC LII pattern s (the place-field drive of "
+             "--pattern-source ec-lii). Needs --pattern-source ec-lii and "
+             "--n-patterns equal to the file's n_slots. The slots, ids and texts "
+             "are saved in the HDF5 group ec_memories. The drive itself is "
+             "unchanged. Unset (default) = no change.")
     parser.add_argument(
         "--no-ec-dg-loop", action="store_true",
         help="Keep the EC LII->DG perforant path as a Poisson stand-in even when "
@@ -5590,6 +5690,11 @@ Dentate gyrus (Phase 6.2):
              "the cortical engram. By default --mpfc enables it; without it the "
              "LV->mPFC weights are static and no association ever forms.")
     parser.add_argument(
+        "--stc-ltp-tag-only", action="store_true",
+        help="WORKLOG 24 (path 3): the STC tag is set only by an LTP pairing "
+             "(dw >= tag threshold). Default: |dw|, so an LTD pairing also tags and "
+             "L-LTP capture then raises that synapse x1.3.")
+    parser.add_argument(
         "--prp-threshold", type=float, default=3.0, metavar="T",
         help="PRP pool threshold for L-LTP capture (default: 3.0 = 3 SWR events). "
              "Set to 999 for Phase 5 falsification experiment (blocks L-LTP while "
@@ -5669,14 +5774,14 @@ def setup_run(args, parser, run):
         parser.error("--mpfc requires --ec-lv")
     if args.homeostasis and not args.stc:
         parser.error("--homeostasis requires --stc (Phase 2 must be active)")
-    if args.pattern_source == "ec-lii" and not args.ec_lii:
-        parser.error("--pattern-source ec-lii requires --ec-lii")
+    if args.pattern_source in ("ec-lii", "both") and not args.ec_lii:
+        parser.error("--pattern-source ec-lii/both requires --ec-lii")
     if args.dg_ec_cluster_sigma > 0:
         if not args.dg:
             parser.error("--dg-ec-cluster-sigma requires --dg")
         if not args.ec_lii:
             parser.error("--dg-ec-cluster-sigma requires --ec-lii")
-        if args.pattern_source != "ec-lii":
+        if args.pattern_source not in ("ec-lii", "both"):
             parser.error("--dg-ec-cluster-sigma requires --pattern-source "
                           "ec-lii (needs the real place-field centers)")
     if args.schaffer_group_frac > 0 and args.schaffer_k is None:
@@ -5707,6 +5812,15 @@ def setup_run(args, parser, run):
         if args.n_patterns < 2:
             parser.error("--novel-pattern-onset requires --n-patterns >= 2 "
                           "(the last pattern index is the one held back)")
+    if args.ec_memories is not None:
+        if args.pattern_source not in ("ec-lii", "both"):
+            parser.error("--ec-memories requires --pattern-source ec-lii or both")
+        import json as _json
+        with open(args.ec_memories, encoding="utf-8") as _f:
+            args.ec_memories_data = _json.load(_f)
+        if args.ec_memories_data["n_slots"] != args.n_patterns:
+            parser.error(f"--ec-memories has {args.ec_memories_data['n_slots']} "
+                          f"slots, --n-patterns is {args.n_patterns}")
     if args.dg_perforant_stdp and not args.dg:
         parser.error("--dg-perforant-stdp requires --dg")
     if args.dg_perforant_stdp and not args.ec_lii:
@@ -5891,6 +6005,12 @@ def build_model(args, run):
         print(f">>> Novel-pattern schedule: pattern {n_pat-1} held back until "
               f"epoch {onset}, then cycling normally: {novel_schedule}")
 
+    # --- Memories from the LLM database (--ec-memories): slot s = pattern s ---
+    if args.ec_memories is not None:
+        run.net["ec_memories"] = args.ec_memories_data
+        for _m in args.ec_memories_data["memories"]:
+            print(f">>> EC memory: pattern {_m['slot']} = {_m['text'][:70]}")
+
     # --- EC LII/III (--ec-lii) ---
     # Built BEFORE the DG so its population can supply the perforant path and
     # close the EC->DG->CA3->CA1->EC loop. EC LII itself only needs CA1, which
@@ -5901,7 +6021,7 @@ def build_model(args, run):
     # They come from an independent numpy RNG (seed + 13), so drawing them
     # earlier than before does not change their values.
     ec_field_centers = None
-    if args.pattern_source == "ec-lii":
+    if args.pattern_source in ("ec-lii", "both"):
         _pf_rng = np.random.default_rng(
             (args.seed if args.seed is not None else 42) + 13)
         ec_field_centers = assign_place_fields(N_ec_lii, _pf_rng)
@@ -5929,7 +6049,7 @@ def build_model(args, run):
     # because EC LII does not exist until build_ec_lii() has run. CA3 never
     # receives any direct pattern-specific injection in this mode -- see
     # build_replay_network's trigger_on/scaffold_on gating.
-    if args.pattern_source == "ec-lii":
+    if args.pattern_source in ("ec-lii", "both"):
         print(">>> Wiring encoding-direction place-field drive onto EC LII...")
         n_pat = max(1, run.net["n_patterns"])
         for ep in range(max(1, run.n_epochs)):
@@ -5952,8 +6072,10 @@ def build_model(args, run):
                 weight=args.ec_pattern_weight)
         print(f"    {n_pat} pattern(s) as ring locations, sigma="
               f"{args.place_field_sigma}, base={args.ec_pattern_base_rate} Hz, "
-              f"peak={args.ec_pattern_peak_rate} Hz  ** CA3 gets no direct "
-              f"injection in this mode **")
+              f"peak={args.ec_pattern_peak_rate} Hz  ** "
+              + ("CA3 ALSO gets the direct trigger/scaffold (both) **"
+                 if args.pattern_source == "both" else
+                 "CA3 gets no direct injection in this mode **"))
 
     # --- Direct EC LII -> CA3 perforant path (--ec-ca3-k, RESULTS.md §30) ---
     # Biology: EC layer II projects to DG AND directly to CA3 (~3,600 inputs per
@@ -6051,6 +6173,8 @@ def build_model(args, run):
             seed_connect = (args.seed if args.seed is not None else 42),
             lii_group_of = run.ec_module.group_of,
             ie_shift   = args.ec_lv_ie_shift,
+            **({} if args.w_eclii_lv is None else {"w_eclii_lv": args.w_eclii_lv}),
+            **({} if args.eclii_lv_k is None else {"K_eclii_lv": args.eclii_lv_k}),
         )
         if args.mpfc:
             print(">>> Building mPFC module (Phase 3)...")
@@ -6092,6 +6216,10 @@ def build_model(args, run):
             # the recurrent collaterals are what a hippocampus-independent
             # memory is actually stored in, so they must learn too
             run.mpfc_rec_hook = build_mpfc_recurrent_hook(run.mpfc_module)
+            if args.save_epoch_weights:
+                # weights before any learning (epoch_weights/mpfc_rec_pre)
+                run.net["epoch_weights_pre"] = {
+                    "mpfc_rec_pre": np.asarray(run.mpfc_rec_hook.w, np.float32).copy()}
 
 
 
@@ -6140,6 +6268,7 @@ def run_consolidation(args, run):
                 t_swr_end     = epoch_t0 + run.swr_fwd[1],
                 current_t_ms  = current_t,
                 PRP_threshold = args.prp_threshold,
+                ltp_tag_only  = args.stc_ltp_tag_only,
             )
             run_stc_hook(
                 run.stc_hook, run.ec_module,
@@ -6147,6 +6276,7 @@ def run_consolidation(args, run):
                 t_swr_end     = epoch_t0 + run.swr_rev[1],
                 current_t_ms  = current_t,
                 PRP_threshold = args.prp_threshold,
+                ltp_tag_only  = args.stc_ltp_tag_only,
             )
 
         if run.schaffer_hook is not None:
@@ -6173,6 +6303,13 @@ def run_consolidation(args, run):
                     t_swr_end   = epoch_t0 + _we,
                     keep_strong = args.hebb_keep_strong,
                 )
+
+        if args.save_epoch_weights:
+            _ew = run.net.setdefault("epoch_weights", {"mpfc_rec": [], "eclv_mpfc": []})
+            if run.mpfc_rec_hook is not None:
+                _ew["mpfc_rec"].append(np.asarray(run.mpfc_rec_hook.w, np.float32).copy())
+            if run.mpfc_assoc_hook is not None:
+                _ew["eclv_mpfc"].append(np.asarray(run.mpfc_assoc_hook.w, np.float32).copy())
 
         if run.n_epochs > 1:
             print(f"    Epoch {epoch+1}/{run.n_epochs} done "
@@ -6265,7 +6402,8 @@ def run_cortical_recall(args, run):
                     [run.swr_fwd, run.swr_rev],
                     t_start=float(sim.GetKernelStatus("biological_time")) + 300.0,
                     n_patterns=run.net["n_patterns"], cue_frac=args.cr_cue_frac,
-                    trials_per_pattern=args.g2_trials, iti_ms=args.g2_iti)
+                    trials_per_pattern=args.g2_trials, iti_ms=args.g2_iti,
+                    fixed_cue=args.g2_fixed_cue, plant_dw=args.plant_trace)
                 run.net["g2_recall"] = _g2
                 print(f"\n  --- G2: pattern-specific cortical recall after the lesion ---")
                 if not _g2["ok"]:
@@ -6345,6 +6483,7 @@ def run_homeostasis(args, run):
                 t_swr_end     = epoch_t0_verify + run.swr_fwd[1],
                 current_t_ms  = epoch_t0_verify + run.SIM_MS,
                 PRP_threshold = args.prp_threshold,
+                ltp_tag_only  = args.stc_ltp_tag_only,
             )
             run_stc_hook(
                 run.stc_hook, run.ec_module,
@@ -6352,6 +6491,7 @@ def run_homeostasis(args, run):
                 t_swr_end     = epoch_t0_verify + run.swr_rev[1],
                 current_t_ms  = epoch_t0_verify + run.SIM_MS,
                 PRP_threshold = args.prp_threshold,
+                ltp_tag_only  = args.stc_ltp_tag_only,
             )
             print(f"    Verification epoch done in {time.perf_counter()-t_verify:.1f}s")
 
