@@ -1421,3 +1421,92 @@ Not checked, remaining candidates:
 - G2 assembly size differs (23 vs 12, 30 vs 15 on 202/303). The assemblies are picked from the
   sleep activity, so this changes what G2 measures. The 4-seed data shows no link to G2.
 - Noise: §28 item 2 is weak (4 seeds).
+
+## 30. Is the §28 recall real? G2 sensitivity now, and a gain check (2026-11-20)
+
+Config: §26–28 W 2.4 (`rw.base` + sk264 + `--stc-ltp-tag-only --prp-threshold 6 --eclii-lv-k 60`).
+Code: commit `81bd38f`, run from a frozen worktree (`out/em/fz_run.sh`), so later code edits
+cannot change these runs.
+
+**A. Plant test (G2 sensitivity in this config).** §20 found G2 blind to 1.0 mV, but that was a
+quieter cortex. Twin config (`--no-stc-hook --no-mpfc-assoc`) + `--plant-trace DW`, DW 0.3 and
+1.0 mV, seeds 202/303 (`pt03_sS`, `pt10_sS`). DW 0 = the §26 twins. 0.3 mV is the size of the
+learned inside-assembly recurrent Δw (§29: +0.22 to +0.46 mV).
+Detected = G2 p < 0.01 on both seeds. Validity: DW 0 must not be detected (it is not: p 0.34 / 1.0).
+Prediction: 1.0 detected; 0.3 detected on 1 of 2 seeds.
+Use: if 0.3 is not detected, the §28 full-learning G2 cannot come from the learned weight size
+alone (assembly choice or another path).
+
+**B. Gain check.** At W 2.4, mPFC is 39–43% active per ripple. W 2.0, full and twin, seeds
+202/303 (`lv20_sS`, `lvN20_sS`).
+Gate: mPFC active in ripple ≤ 0.35 in full, and full G2 p < 0.01 and > twin on both seeds.
+Prediction: mPFC ≈ 0.30–0.35; G2 passes on 1 of 2 seeds (the effect shrinks with less drive).
+
+**Result (runs 19:51–21:10).**
+
+A. Plant test (twin config + planted recurrent trace):
+
+| DW | s202 G2 (p) [planted syn] | s303 G2 (p) [planted syn] |
+|---|---|---|
+| 0 (§26 twin) | +0.002 (0.34) | −0.001 (1.00) |
+| 0.3 mV | **+0.019 (0.0015)** [169] | −0.002 (1.00) [273] |
+| 1.0 mV | +0.018 (0.015) [68] | +0.004 (0.097) [228] |
+
+Neither DW is detected on both seeds. Prediction wrong for 1.0 mV.
+- G2 is now more sensitive than in §20 (there 1.0 mV gave nothing; here 0.3 passes on s202).
+  But detection is unreliable: it depends on the seed, and is not monotonic in DW.
+- Same seed and config, different planted synapse counts (169 vs 68; 273 vs 228). The plant
+  happens after the assemblies are chosen, so the assemblies themselves differ between the two
+  runs: 3-thread runs are not repeatable here (§18 item 6, §20 caveat). Run-to-run noise in
+  G2 is therefore large.
+- Use for §28: full learning makes an inside-assembly recurrent Δw of +0.22 to +0.46 mV (§29),
+  the same size as these plants. A 3/4 pass rate for full learning is about what a planted
+  trace of that size gives (1 of 2 here). So the §28 result fits "learned weights of the
+  planted size", but G2 alone cannot separate it from noise with 4 seeds.
+
+B. Gain check, W 2.0:
+
+| seed | mPFC active in SWR full / twin | G2 full (p) | G2 twin (p) |
+|---|---|---|---|
+| 202 | 0.288 / 0.270 | **+0.027 (0.0015)** | −0.001 (1.00) |
+| 303 | 0.325 / 0.290 | +0.008 (0.17) | +0.000 (1.00) |
+
+Gate: mPFC ≤ 0.35 PASS; G2 on both seeds FAIL (1 of 2). Prediction right.
+With less mPFC activity, full learning is still above its twin on both seeds and passes on
+one. So the effect is not only a gain effect of a very active mPFC, but it is not robust either.
+
+Result: **the §28 recall is real in direction (full > twin on 6/6 seed-configs so far) but G2
+is a noisy test.** Each G2 run is a coin with a bias. More seeds per condition is the only way
+to get a firm answer at 1%. Fixed assemblies (§31) remove one noise source.
+
+## 31. Dose: does more sleep give more recall? (2026-11-20)
+
+Config: §26 W 2.4 (frozen code `81bd38f`). `--n-swr` 6 and 24 (12 = §26), full and twin, seeds
+202/303 (`d06_sS`, `d06N_sS`, `d24_sS`, `d24N_sS`). 3 patterns: 2 / 4 / 8 SWR per memory.
+At 6 SWR a memory has 4 ripple events < PRP threshold 6, so selective cells cannot capture:
+less sleep also means no L-LTP. This is part of the dose, not removed.
+Gate (fixed before the runs):
+1. Primary (weights): recurrent mPFC Δw, inside − between the run's own G2 assemblies, rises
+   6 < 12 < 24 on both seeds.
+2. Primary (recall): G2 full − twin rises 6 < 12 < 24 on both seeds.
+Prediction: 1 passes; 2 fails (G2 noise, §30).
+
+## 32. LLM: can the EC LII memory reach CA3 without the CA3 drive? Routing sweep (2026-11-20)
+
+§21: in EC LII mode (`--pattern-source ec-lii`, the database memory is the only pattern input),
+CA3 stays at chance even with the JOB H16 routing (`emr`: CA3 z +0.09 / +0.18). Upstream
+RESULTS §32 got +0.42 with the same routing. Our base (`out/em/em.base` = `emr` without the
+routing flags) differs from upstream mainly by `--ca3-drive-scale 0.35` (constant CA3 inputs
+× 0.35, WORKLOG §14), 12 vs 14 blocks, and the cortex flags (downstream of CA3).
+Arms (seed 202, 12 SWR, frozen code `81bd38f`); routing R = `--mf-group-frac 0.7 --ec-ca3-k 12
+--ec-ca3-w 1.0 --ec-ca3-group-frac 0.7` unless stated:
+- `rt1`: R + `--ca3-drive-scale 1.0` (upstream drive).
+- `rt2`: `--mf-group-frac 1.0 --ec-ca3-k 12 --ec-ca3-w 1.0 --ec-ca3-group-frac 1.0` (drive 0.35).
+- `rt3`: rt2 routing + `--ca3-drive-scale 1.0`.
+- `rt4`: R with `--ec-ca3-k 40 --ec-ca3-w 2.0` (strong perforant path; not anatomical).
+Reference: `emr_s202` (R, drive 0.35): CA3 z +0.09.
+Readout: `decode_identity.py` CA3 SUP and CA1 home-group z and decoder; CA3 SUP active
+fraction in SWR windows (`lv_act.py` style).
+Gate: an arm passes if CA3 SUP home z ≥ +0.40 with p < 0.01. The best passing arm then gets
+seed 303 and the full sleep test (§26 learning vs twin) in EC LII mode.
+Prediction: rt1 ≈ +0.3 (drive scale is the cause); rt3 passes; rt4 highest.

@@ -1086,6 +1086,10 @@ def build_replay_network(
     # SPECIFIC: train A-only and B-only on the SAME network (same seed, so
     # the same synapses exist) and compare the resulting weight changes.
     train_pattern=None,
+    # Control (opt-in): each SWR drives the same number of CA3 SUP cells with
+    # the same trigger/scaffold timing, but the cells are drawn at random
+    # (new draw per epoch) instead of from the pattern's groups.
+    random_replay=False,
     # Phase 7: where the pattern-defining external drive attaches.
     # "ca3" (default) is the original Watson-replay direction: the trigger/
     # scaffold below inject pattern identity straight into CA3 SUP, modelling
@@ -1539,6 +1543,12 @@ def build_replay_network(
         epoch_pattern.append(ep % len(patterns) if train_pattern is None
                              else train_pattern % len(patterns))
         grp   = [ca3_sup_groups[i] for i in pat]
+        if random_replay:
+            _pool = np.concatenate([np.asarray([int(i) for i in g]) for g in ca3_sup_groups])
+            _rr = np.random.default_rng(seed_connect * 1000 + 777 + ep)
+            _pick = _rr.choice(_pool, size=sum(len(g) for g in grp), replace=False)
+            _cuts = np.cumsum([len(g) for g in grp])[:-1]
+            grp = [list(c) for c in np.split(_pick, _cuts)]
         f_s, r_s = t0_ep + swr_fwd_start, t0_ep + swr_rev_start
         # pattern_source="ec-lii": CA3 gets no direct pattern-specific
         # injection at all -- the encoding-direction drive is wired onto
@@ -2472,7 +2482,8 @@ def completion_index(spk_times, spk_senders, cued, uncued, win_start, win_stop):
 def pattern_recall_specificity(mpfc_module, epoch_pattern, n_epochs, epoch_ms,
                                swr_wins, t_start, n_patterns, cue_frac,
                                trials_per_pattern=4, iti_ms=250.0, win_ms=80.0,
-                               n_perm=2000, seed=11, fixed_cue=False, plant_dw=0.0):
+                               n_perm=2000, seed=11, fixed_cue=False, plant_dw=0.0,
+                               assemblies_from=None):
     """Gate G2: after the hippocampal lesion, does a partial cue of pattern p's
     cortical assembly reactivate p's assembly rather than the others?
 
@@ -2517,6 +2528,15 @@ def pattern_recall_specificity(mpfc_module, epoch_pattern, n_epochs, epoch_ms,
     if msize < 4:
         return dict(ok=False, reason=f"assemblies too small (min {msize} cells)")
     assemblies = [gids[c[np.argsort(-strength[c])][:msize]] for c in cand]
+    if assemblies_from is not None:
+        import h5py
+        with h5py.File(assemblies_from, "r") as _f:
+            _A = np.asarray(_f["g2_recall/assemblies"][:], dtype=np.int64)
+        if not np.isin(_A, gids).all():
+            raise ValueError(f"--g2-assemblies-from {assemblies_from}: GIDs not in this mPFC")
+        assemblies = [a for a in _A]
+        msize = _A.shape[1]
+        print(f"  [g2] assemblies from {assemblies_from} ({_A.shape[0]} x {msize})")
 
     # --plant-trace: test-only positive control. Add plant_dw mV to every
     # recurrent mPFC synapse inside one assembly, before the first cue.
@@ -4099,6 +4119,7 @@ def run_stc_hook(
     # grow the volley back to 3.75x threshold and undo the sparsening within a
     # few epochs -- the same trap already hit with the mPFC assoc hook's w_max.
     w_max_rel     : float = 1.5,  # ceiling as a multiple of w_init
+    capture_factor: float = 1.3,  # L-LTP: weight x this on capture
     w_min_rel     : float = 0.1,  # floor as a multiple of w_init
     # Structural plasticity parameters
     struct_threshold : int   = 5,    # L-LTP epochs needed for spine enlargement
@@ -4224,7 +4245,7 @@ def run_stc_hook(
     new_capture = tag_alive & prp_above & ~stc.ltp_done
     if new_capture.any():
         # Permanent weight consolidation: boost by 30% capped at w_max
-        stc.w[new_capture] = np.minimum(stc.w[new_capture] * 1.3, _wmax)
+        stc.w[new_capture] = np.minimum(stc.w[new_capture] * capture_factor, _wmax)
         stc.ltp_done |= new_capture
 
     # ---- 5b. Structural plasticity — 3rd timescale (spine enlargement) -------
@@ -5359,6 +5380,16 @@ Dentate gyrus (Phase 6.2):
     parser.add_argument("--g2-iti", type=float, default=250.0, metavar="MS",
                         help="Gate G2: interval between cue trials (ms).")
     parser.add_argument(
+        "--random-replay", action="store_true",
+        help="Control: each SWR drives the same number of CA3 SUP cells with the "
+             "same timing, but the cells are drawn at random (new draw per epoch), "
+             "not from the replayed pattern's groups. Default off.")
+    parser.add_argument(
+        "--g2-assemblies-from", default=None, metavar="H5",
+        help="Gate G2: use g2_recall/assemblies from another run's HDF5 (same "
+             "seed and network) instead of choosing them from this run's sleep "
+             "activity, so conditions are cued on the same cells. Default off.")
+    parser.add_argument(
         "--g2-fixed-cue", action="store_true",
         help="Gate G2: cue the same subset of each assembly on every trial "
              "(exported as g2_recall/cue_sets), so a decoder can exclude all "
@@ -5690,6 +5721,12 @@ Dentate gyrus (Phase 6.2):
              "the cortical engram. By default --mpfc enables it; without it the "
              "LV->mPFC weights are static and no association ever forms.")
     parser.add_argument(
+        "--stc-capture-factor", type=float, default=1.3, metavar="F",
+        help="STC L-LTP: multiply a captured CA1->EC LII weight by F (default 1.3).")
+    parser.add_argument(
+        "--stc-w-max-rel", type=float, default=1.5, metavar="R",
+        help="STC weight ceiling as a multiple of w_init (default 1.5).")
+    parser.add_argument(
         "--stc-ltp-tag-only", action="store_true",
         help="WORKLOG 24 (path 3): the STC tag is set only by an LTP pairing "
              "(dw >= tag threshold). Default: |dw|, so an LTD pairing also tags and "
@@ -5969,6 +6006,7 @@ def build_model(args, run):
         swr_bg_gain    = args.swr_bg_gain,
         n_patterns     = args.n_patterns,
         train_pattern  = args.train_pattern,
+        random_replay  = args.random_replay,
         pattern_source = args.pattern_source,
         n_epochs       = run.n_epochs,
         epoch_ms       = run.SIM_MS,
@@ -6269,6 +6307,8 @@ def run_consolidation(args, run):
                 current_t_ms  = current_t,
                 PRP_threshold = args.prp_threshold,
                 ltp_tag_only  = args.stc_ltp_tag_only,
+                capture_factor = args.stc_capture_factor,
+                w_max_rel     = args.stc_w_max_rel,
             )
             run_stc_hook(
                 run.stc_hook, run.ec_module,
@@ -6277,6 +6317,8 @@ def run_consolidation(args, run):
                 current_t_ms  = current_t,
                 PRP_threshold = args.prp_threshold,
                 ltp_tag_only  = args.stc_ltp_tag_only,
+                capture_factor = args.stc_capture_factor,
+                w_max_rel     = args.stc_w_max_rel,
             )
 
         if run.schaffer_hook is not None:
@@ -6403,7 +6445,8 @@ def run_cortical_recall(args, run):
                     t_start=float(sim.GetKernelStatus("biological_time")) + 300.0,
                     n_patterns=run.net["n_patterns"], cue_frac=args.cr_cue_frac,
                     trials_per_pattern=args.g2_trials, iti_ms=args.g2_iti,
-                    fixed_cue=args.g2_fixed_cue, plant_dw=args.plant_trace)
+                    fixed_cue=args.g2_fixed_cue, plant_dw=args.plant_trace,
+                    assemblies_from=args.g2_assemblies_from)
                 run.net["g2_recall"] = _g2
                 print(f"\n  --- G2: pattern-specific cortical recall after the lesion ---")
                 if not _g2["ok"]:
@@ -6484,6 +6527,8 @@ def run_homeostasis(args, run):
                 current_t_ms  = epoch_t0_verify + run.SIM_MS,
                 PRP_threshold = args.prp_threshold,
                 ltp_tag_only  = args.stc_ltp_tag_only,
+                capture_factor = args.stc_capture_factor,
+                w_max_rel     = args.stc_w_max_rel,
             )
             run_stc_hook(
                 run.stc_hook, run.ec_module,
@@ -6492,6 +6537,8 @@ def run_homeostasis(args, run):
                 current_t_ms  = epoch_t0_verify + run.SIM_MS,
                 PRP_threshold = args.prp_threshold,
                 ltp_tag_only  = args.stc_ltp_tag_only,
+                capture_factor = args.stc_capture_factor,
+                w_max_rel     = args.stc_w_max_rel,
             )
             print(f"    Verification epoch done in {time.perf_counter()-t_verify:.1f}s")
 
