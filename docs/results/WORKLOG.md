@@ -1151,3 +1151,21 @@ both seeds, and CA1 PYR keeps p < 0.01. `f1` and `f3` only show the full-input e
 Validity (else void): EC LV 1–20 Hz in SWR windows; CA1 2–20 Hz.
 Prediction: EC LV SWR rate rises above the whole-run rate. z: f1 +0.20, f2 +0.05, f3 +0.40,
 f4 +0.10. Controls fail: the CA1 → EC LV synapse (K 30, w 0.45) is too weak alone.
+
+**Result (§39).** Home z (p), seeds 202 / 303. EC LV Hz: SWR windows vs same-length windows outside.
+
+| arm | EC LV z (p) | mPFC z | CA1 z (p) | EC LV Hz | valid | gate |
+|---|---|---|---|---|---|---|
+| `f1` FF 0 | +0.09 (0.006) / +0.20 (0.0005) | +0.04 / +0.11 | +0.46 / +0.63 | 3.0 vs 3.1 / 2.9 vs 2.9 | yes | — |
+| `f2` f1, no EC LII → LV | +0.04 (0.046) / +0.08 (0.008) | −0.05 / +0.08 | +0.34 (0.007) / +0.58 | 3.1 / 2.8 | yes | fail |
+| `f3` f1 + ie −2 + frac 1.0 | +0.30 (0.008) / +0.28 (0.001) | +0.10 / −0.00 | +0.42 (0.010) / +0.49 | 1.1 / 1.0 | yes | — |
+| `f4` f3, no EC LII → LV | +0.18 (0.027) / +0.29 (0.0015) | +0.06 / +0.11 | +0.41 / +0.64 | 1.0 / **0.9** | s303 **no** | fail |
+
+- No control arm passes. Prediction: f1, f2 and f3 near the predicted values; f4 above (+0.18 / +0.29 vs +0.10).
+- FF inhibition caused the SWR-window drop in EC LV: without it, SWR and outside rates are equal
+  (3.0 vs 3.1 Hz). CA1 bursts still add no net EC LV firing. The predicted rise did not occur.
+- With the default background (f1, f2), removing FF inhibition does not help: f2 ≈ e3.
+- **First CA1 → EC LV signal: f4 (no EC LII input) +0.18 / +0.29 vs e3 −0.01 / +0.09.** f3 ≈ f4, so in
+  this setting EC LV identity comes from CA1, not EC LII. Below gate size, and EC LV is at the 1 Hz floor.
+- Open: `e4` + `--w-eclii-lv 0` (FF on) is not run, so the f4 gain is not yet attributed to FF removal
+  vs to ie −2 + frac 1.0. Next lever: a stronger CA1 → EC LV synapse, to lift both z and rate.
