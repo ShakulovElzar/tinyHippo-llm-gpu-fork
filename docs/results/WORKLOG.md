@@ -1783,3 +1783,7 @@ and 6–7% active in every arm. Seeds 202 / 303:
   2–4% target. 1% only, 2 seeds, 3 threads: a pilot until a third seed and 12%.
 - c3 config: `em.base` + `--ec-ca3-k 12 --ec-ca3-w 1.0 --ec-ca3-group-frac 0.7 --mf-group-frac 1.0
   --mf-k 46 --dg-ec-cluster-sigma 0.03 --ca3-drive-scale 0.1 --schaffer-w-scale 1.5`.
+
+**Third seed (pre-registered before the run).** `c3` on seed 404, same code `1451f85` and config.
+Same gate and validity rules as above. Reference on seed 404: `sD` CA3 +0.47, CA1 +0.11.
+Prediction: CA1 z ≥ +0.40 (pass).
