@@ -1662,3 +1662,23 @@ Gate (same as §32): an arm passes if CA3 SUP home z ≥ +0.40 with p < 0.01. Va
 active ≤ 10% and CA3 SUP not runaway (rate < 20 Hz). Report CA1 z.
 If an arm passes: seed 303, then the CA3 → CA1 hop (CA1 is at chance even in rt4).
 Prediction: dg1 passes (z ~ +0.5); dg2 below gate; dg3 highest; CA1 stays < +0.2 in all arms.
+
+**Result** (seed 202). S0 `s0_after8` = `8631eb29…` (unchanged).
+
+| arm | mossy K | CA3 SUP z (p) | CA1 z (p) | EC LV z (p) | CA3 SUP active / Hz | CA1 active / Hz | DG own z, active |
+|---|---|---|---|---|---|---|---|
+| `emr` (ref) | 15 | +0.09 (0.24) | +0.13 (0.20) | −0.03 (0.33) | 0.73 / 6.9 | 0.60 / 5.5 | +1.39, 6% |
+| `dg1` | 46 | +0.32 (0.004) | −0.13 (0.87) | +0.08 (0.010) | 0.74 / 7.1 | 0.55 / 4.8 | +1.36, 6% |
+| `dg2` | 46, frac 0.7 | +0.23 (0.030) | −0.18 (0.92) | +0.05 (0.014) | 0.74 / 7.1 | 0.56 / 5.1 | +1.34, 6% |
+| `dg3` | 46 + drive 0.2 | **+0.44 (0.001)** | +0.25 (0.026) | +0.04 (0.029) | 0.45 / 3.9 | 0.37 / 3.2 | +1.27, 6% |
+
+Validity: DG ≤ 10% active and CA3 < 20 Hz in all arms (pass). mPFC at chance in all arms.
+Gate (CA3 z ≥ +0.40, p < 0.01): **only `dg3` passes.**
+Prediction: dg1 passes wrong (+0.32); dg2 below gate right; dg3 highest right; CA1 < +0.2 wrong
+for dg3 (+0.25, p 0.026, not significant).
+
+Result: **the anatomical route DG → CA3 carries the memory into CA3 when two things hold:**
+the biological mossy in-degree (46) and less non-specific CA3 drive. The in-degree alone lifts
+CA3 from +0.09 to +0.32. Less background lifts it to +0.44, and CA1 starts to follow (+0.25).
+Cost: CA3 and CA1 rates fall to 3.9 / 3.2 Hz. Replay quality was not checked at drive 0.2.
+Next (pre-registered): `dg3_s303`.
