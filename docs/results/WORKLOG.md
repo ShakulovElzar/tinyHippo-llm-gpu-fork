@@ -1552,7 +1552,9 @@ Prediction: rt1 ≈ +0.3 wrong (+0.13); rt3 passes wrong; rt4 highest right.
 Result: **the drive scale is not the cause.** Upstream drive (rt1, rt3) does not help. Only a
 strong perforant path (40 synapses × 2.0, not anatomical) puts the database memory into CA3.
 CA1 still does not carry it (+0.12), so the CA3 → CA1 hop also loses it.
-Next (pre-registered): `rt4_s303` (running). The full sleep test in EC LII mode waits for it.
+Replication `rt4_s303`: CA3 SUP z **+0.66 (p 0.0005)**, CA1 +0.14 (0.23), EC LV +0.05 (0.07),
+mPFC −0.01 (0.28). **rt4 passes on both seeds.** CA1 loses the memory on both seeds.
+Next: the full sleep test in EC LII mode (waits for the user: rt4 routing is not anatomical).
 
 ## 33. Same G2 cells in every condition, and random replay (2026-11-20)
 
