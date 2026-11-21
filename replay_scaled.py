@@ -5246,6 +5246,9 @@ Dentate gyrus (Phase 6.2):
         help="WORKLOG 25: EC LII -> EC LV weight in mV (default: build_ec_lv's 0.8). "
              "At default, a ripple gives an EC LV cell about 1 mV from EC LII.")
     parser.add_argument(
+        "--w-ca1-lv", type=float, default=None, metavar="W",
+        help="WORKLOG 40: CA1 -> EC LV weight in mV (default: build_ec_lv's 0.45).")
+    parser.add_argument(
         "--eclii-lv-k", type=int, default=None, metavar="K",
         help="WORKLOG 25: EC LII -> EC LV in-degree (default: build_ec_lv's 20).")
     parser.add_argument(
@@ -6222,6 +6225,7 @@ def build_model(args, run):
             seed_connect = (args.seed if args.seed is not None else 42),
             lii_group_of = run.ec_module.group_of,
             ie_shift   = args.ec_lv_ie_shift,
+            **({} if args.w_ca1_lv is None else {"w_ca1_lv": args.w_ca1_lv}),
             **({} if args.w_eclii_lv is None else {"w_eclii_lv": args.w_eclii_lv}),
             **({} if args.eclii_lv_k is None else {"K_eclii_lv": args.eclii_lv_k}),
         )

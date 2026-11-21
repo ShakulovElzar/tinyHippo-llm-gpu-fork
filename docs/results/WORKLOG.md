@@ -1169,3 +1169,17 @@ f4 +0.10. Controls fail: the CA1 → EC LV synapse (K 30, w 0.45) is too weak al
   this setting EC LV identity comes from CA1, not EC LII. Below gate size, and EC LV is at the 1 Hz floor.
 - Open: `e4` + `--w-eclii-lv 0` (FF on) is not run, so the f4 gain is not yet attributed to FF removal
   vs to ie −2 + frac 1.0. Next lever: a stronger CA1 → EC LV synapse, to lift both z and rate.
+
+## §40. Stronger CA1 → EC LV synapse (pre-registered 2026-11-21, before the runs)
+
+Question: does a stronger CA1 → EC LV synapse lift EC LV identity from CA1 to the gate?
+New opt-in flag `--w-ca1-lv` (default None = `build_ec_lv`'s 0.45). S0 digest `8631eb29…` unchanged.
+Base = `f4` from §39 (`c3` + `--ec-lv-ff-inhib 0 --ec-lv-ie-shift -2 --cortex-group-frac 1.0
+--w-eclii-lv 0`). EC LII → LV is off in every arm, so any EC LV identity comes from CA1.
+At w 0.45, K 30 gives a 13.5 mV volley (0.68× threshold). 12 blocks, seeds 202 and 303. Arms:
+- `g1`: `--w-ca1-lv 0.9` (2×).
+- `g2`: `--w-ca1-lv 1.35` (3×).
+Gate: EC LV home z ≥ +0.40 with p < 0.01 on both seeds, and CA1 PYR keeps p < 0.01.
+Validity (else void): EC LV 1–20 Hz in SWR windows; CA1 2–20 Hz.
+Prediction: EC LV SWR rate rises to 2–4 Hz (g1) and 4–8 Hz (g2). z g1 +0.30, g2 +0.30: CA1 home-group
+modulation (10–20%) limits what EC LV can inherit. Both fail on size.
