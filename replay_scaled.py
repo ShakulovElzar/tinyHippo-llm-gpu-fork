@@ -5337,6 +5337,11 @@ Dentate gyrus (Phase 6.2):
              "FRAC of each CA3 cell's mossy inputs come from granule cells of its "
              "sequence group's pattern. Weights/delays/w_cv unchanged.")
     parser.add_argument(
+        "--mf-k", type=int, default=0, metavar="K",
+        help="Mossy-fibre in-degree onto CA3 SUP (DG GC -> CA3). 0 (default) keeps 15. "
+             "Rat CA3 cells get ~46-50 mossy inputs (Amaral et al. 1990; Treves & Rolls "
+             "1992). CA3 DEEP is scaled by the same factor (default 8).")
+    parser.add_argument(
         "--ec-ca3-k", type=int, default=0, metavar="K",
         help="RESULTS.md SS30: in-degree of a direct EC LII -> CA3 (SUP and DEEP) "
              "perforant path, which exists in biology (~3,600 inputs per rat CA3 "
@@ -5824,6 +5829,12 @@ def setup_run(args, parser, run):
     if args.schaffer_group_frac > 0 and args.schaffer_k is None:
         parser.error("--schaffer-group-frac requires --schaffer-k (meaningless "
                       "at the default 100% dense Schaffer projection)")
+    if args.mf_k > 0:
+        if not args.dg:
+            parser.error("--mf-k requires --dg")
+        TARGET_INDEGREE["dg_mf_ca3_deep"] = max(1, round(args.mf_k * TARGET_INDEGREE["dg_mf_ca3_deep"]
+                                                         / TARGET_INDEGREE["dg_mf_ca3_sup"]))
+        TARGET_INDEGREE["dg_mf_ca3_sup"] = args.mf_k
     if args.mf_group_frac > 0 and args.dg_ec_cluster_sigma <= 0:
         parser.error("--mf-group-frac requires --dg-ec-cluster-sigma (granule cells "
                       "only have a pattern when the perforant path is clustered)")
