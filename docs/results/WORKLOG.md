@@ -1491,6 +1491,29 @@ Gate (fixed before the runs):
 2. Primary (recall): G2 full − twin rises 6 < 12 < 24 on both seeds.
 Prediction: 1 passes; 2 fails (G2 noise, §30).
 
+**Result.** Rec Δw = recurrent mPFC, inside − between the run's own G2 assemblies.
+
+| seed | SWR | rec Δw in − betw (mV) | assembly size | G2 full (p) | G2 twin (p) | full − twin |
+|---|---|---|---|---|---|---|
+| 202 | 6 | +0.555 | 13 | +0.061 (0.0005) | −0.003 (1.0) | +0.064 |
+| 202 | 12 | +0.304 | 23 | +0.018 (0.0055) | +0.002 (0.34) | +0.016 |
+| 202 | 24 | +0.396 | 13 | −0.006 (1.0) | +0.010 (0.018) | −0.016 |
+| 303 | 6 | +0.315 | 21 | +0.011 (0.0050) | +0.009 (0.016) | +0.002 |
+| 303 | 12 | +0.245 | 30 | +0.036 (0.0005) | −0.001 (1.0) | +0.037 |
+| 303 | 24 | +0.108 | 32 | +0.021 (0.0085) | +0.006 (0.036) | +0.015 |
+
+Gate:
+1. Weights rise 6 < 12 < 24: **FAIL** on both seeds (6 SWR is the largest on both).
+2. G2 full − twin rises: **FAIL** on both seeds.
+Prediction 1 was wrong; prediction 2 was right.
+
+Result: **no dose effect.** More sleep does not give larger learned mPFC weights or better recall.
+Caveats:
+- The weight measure uses each run's own assemblies, which differ between runs (13–32 cells).
+  So the weight column mixes learning with the choice of cells.
+- s202 at 6 SWR has the best G2 of all runs (+0.061), with no L-LTP possible (4 events < PRP 6).
+  So this recall does not need STC capture. It agrees with §33: mPFC learning alone is enough.
+
 ## 32. LLM: can the EC LII memory reach CA3 without the CA3 drive? Routing sweep (2026-11-20)
 
 §21: in EC LII mode (`--pattern-source ec-lii`, the database memory is the only pattern input),
@@ -1510,3 +1533,99 @@ fraction in SWR windows (`lv_act.py` style).
 Gate: an arm passes if CA3 SUP home z ≥ +0.40 with p < 0.01. The best passing arm then gets
 seed 303 and the full sleep test (§26 learning vs twin) in EC LII mode.
 Prediction: rt1 ≈ +0.3 (drive scale is the cause); rt3 passes; rt4 highest.
+
+**Result** (`decode_identity.py`, seed 202, block-label shuffle p):
+
+| arm | CA3 SUP z (p) | CA1 z (p) | EC LV z (p) | EC LV decoder rate+timing (p) |
+|---|---|---|---|---|
+| `emr` (reference) | +0.09 (0.24) | +0.13 (0.20) | −0.03 (0.33) | 0.08 (0.79) |
+| `rt1` drive 1.0 | +0.13 (0.025) | +0.13 (0.15) | +0.04 (0.022) | 0.25 (0.25) |
+| `rt2` routing frac 1.0 | +0.27 (0.041) | +0.23 (0.026) | +0.10 (0.004) | 0.17 (0.60) |
+| `rt3` rt2 + drive 1.0 | +0.11 (0.023) | +0.01 (0.39) | +0.04 (0.095) | 0.25 (0.39) |
+| `rt4` strong EC→CA3 | **+0.69 (0.0005)** | +0.12 (0.15) | −0.03 (0.36) | 0.83 (0.0015) |
+
+EC LII z +1.40 and decoder 1.00 in all arms (the memory input works). mPFC at chance in all arms.
+
+Gate (CA3 z ≥ +0.40, p < 0.01): **only `rt4` passes.**
+Prediction: rt1 ≈ +0.3 wrong (+0.13); rt3 passes wrong; rt4 highest right.
+
+Result: **the drive scale is not the cause.** Upstream drive (rt1, rt3) does not help. Only a
+strong perforant path (40 synapses × 2.0, not anatomical) puts the database memory into CA3.
+CA1 still does not carry it (+0.12), so the CA3 → CA1 hop also loses it.
+Next (pre-registered): `rt4_s303` (running). The full sleep test in EC LII mode waits for it.
+
+## 33. Same G2 cells in every condition, and random replay (2026-11-20)
+
+Code `ad206be` (frozen worktree `../thl-run2`, `out/em/fz2_run.sh`). S0 with all new flags off:
+`8631eb29…` (`s0_after6`, `s0_after7`). Config: §26 W 2.4. Runs one at a time, next to the
+other 2-run queue (RAM 63% free, 2.6 GB per run).
+
+**A. Fixed assemblies.** `--g2-assemblies-from` the seed's twin (`lvN24_s202.h5`, `lvN24_s303.h5`),
+so full, A and B are cued on the same cells (chosen without learning). `fa24_sS`, `faA24_sS`,
+`faB24_sS`, seeds 202/303.
+Gate: full G2 p < 0.01 and > twin on both seeds. Descriptive: I = full − A − B + twin.
+Prediction: full passes on 1 of 2 (run noise, §30).
+
+**B. Random replay.** Full learning + `--random-replay`, seeds 202/303 (`rr24_sS`).
+Same CA3 cell count and timing per SWR, random cells. Note: the EC LII memory drive
+(hybrid mode) still gives each epoch its memory, and at W 2.4 that drive reaches EC LV (§25).
+Gate: "replay is needed" if G2 p ≥ 0.05 on both seeds. Prediction: fails on ≥ 1 seed, i.e. recall
+partly survives, carried by the EC LII drive, not by CA3 replay.
+
+**Result.** G2 specificity (trial-shuffle p); rec Δw = recurrent mPFC, inside − between assemblies.
+
+| seed | arm | G2 (p) | rec Δw in − betw (mV) |
+|---|---|---|---|
+| 202 | full `fa24` | +0.040 (0.0010) | +0.324 |
+| 202 | A, STC off `faA24` | +0.035 (0.0010) | +0.280 |
+| 202 | B, mPFC off `faB24` | +0.001 (0.42) | — |
+| 202 | twin `lvN24` | +0.002 (0.34) | — |
+| 202 | random replay `rr24` | +0.000 (1.0) | +0.369 (own assemblies, 7 cells) |
+| 303 | full `fa24` | +0.004 (0.10) | +0.195 |
+| 303 | A `faA24` | +0.005 (0.13) | +0.202 |
+| 303 | B `faB24` | −0.001 (1.0) | — |
+| 303 | twin `lvN24` | −0.001 (1.0) | — |
+| 303 | random replay `rr24` | −0.002 (0.70) | +0.214 (own assemblies, 24 cells) |
+
+Assemblies: 11 cells (s202), 21 cells (s303), the same in all fixed arms.
+Interaction I = full − A − B + twin: +0.006 (s202), −0.001 (s303).
+
+Gate:
+- A. Full G2 p < 0.01 and > twin on both seeds: **FAIL** (passes on s202 only). Prediction right.
+- B. "Replay is needed" (G2 p ≥ 0.05 on both seeds): **PASS.** Prediction wrong.
+
+Result:
+1. **With the same cells in every arm, the STC × mPFC interaction is gone** (I ≈ 0 on both seeds).
+   On s202, A (mPFC learning only) gives the same recall as full. The §28 interaction most
+   probably came from the choice of assemblies, not from learning on shared cells.
+2. **mPFC learning is the rule that carries G2 recall.** B (STC only) is at twin level on both seeds.
+3. **Random CA3 replay removes recall on both seeds**, although mPFC still learns (rec Δw
+   +0.37 / +0.21 mV, the same size as full). So the order and identity of replay matter, not the
+   amount of learning. The EC LII memory drive alone does not carry recall.
+   Caveat: full itself passes on only 1 of 2 seeds here, so the random-replay result is strong
+   on s202 and weak on s303.
+
+## 34. A larger STC trace (2026-11-20)
+
+Same code and config, full learning. `--stc-capture-factor 2.0 --stc-w-max-rel 3.0` (`cf20_sS`)
+and `--stc-capture-factor 3.0 --stc-w-max-rel 4.5` (`cf30_sS`), seeds 202/303. Default 1.3 / 1.5.
+Gate: 1. size: CA1→EC LII own−other Δw ≥ 4 µV (§24 target), p < 0.01, both seeds.
+2. Descriptive: G2 vs §28 full (+0.018 / +0.036).
+Prediction: 1 passes at 3.0; G2 unchanged (the lesion cuts CA1 → cortex, §29).
+
+**Result.** CA1 → EC LII own − other Δw (`ec_weight_readout.py`, 2000 label permutations).
+
+| seed | capture factor / w max | own − other Δw (µV) | p | L-LTP own / other | G2 (p) |
+|---|---|---|---|---|---|
+| 202 | 1.3 / 1.5 (§26) | +2.39 | 0.0005 | 0.039 / 0.029 | +0.018 (0.0055) |
+| 202 | 2.0 / 3.0 | +7.09 | 0.0005 | 0.037 / 0.024 | −0.002 (0.66) |
+| 202 | 3.0 / 4.5 | +12.10 | 0.0005 | 0.046 / 0.031 | +0.000 (1.0) |
+| 303 | 1.3 / 1.5 (§26) | +2.68 | 0.0005 | 0.037 / 0.023 | +0.036 (0.0005) |
+| 303 | 2.0 / 3.0 | +7.15 | 0.0005 | 0.043 / 0.030 | +0.008 (0.19) |
+| 303 | 3.0 / 4.5 | +8.27 | 0.0005 | 0.048 / 0.038 | +0.037 (0.0005) |
+
+Gate 1 (size ≥ 4 µV, p < 0.01, both seeds): **PASS at 2.0 and at 3.0.** Prediction right
+(it passes at 3.0), and 2.0 is already enough.
+Descriptive: G2 is lower than §28 full in 3 of 4 runs. G2 is noisy (§30), so this is not a
+finding. A larger CA1 → EC trace does not improve post-lesion mPFC recall, as expected (the
+lesion leaves only recurrent mPFC weights).
