@@ -1848,3 +1848,21 @@ active). z with 95% interval over blocks; halves = first 12 / last 12 blocks:
 Correction to the seed-404 diagnosis: uneven coverage is at least partly dynamic (competition between
 home groups), not only a fixed wiring draw. A group-level MF map does not remove that competition, so
 the expected gain is small. Not coded yet.
+
+## 38. The CA1 → EC LV hop in EC LII mode (2026-11-21)
+
+Base = `c3` (§37). On `c3L` (24 blocks) EC LV home z is +0.08 / +0.16 / +0.07 (p 0.0005), mPFC
++0.07 / −0.05 / +0.03. EC LV fires 2.5 Hz in SWR windows and 3.6 Hz overall, so SWRs do not drive it:
+its intrinsic I_e (N(3.0, 1.5) − 1) dominates. Wiring (`build_ec_lv`): CA1 → LV K 30 w 0.45,
+EC LII → LV K 20 w 0.8, both with `--cortex-group-frac 0.7`; CA1-driven FF inhibition −0.25.
+Risk: EC LII (z +1.4, it is the pattern input) can give EC LV identity without CA1. Superficial →
+deep EC input is sparse in rat (not checked in a primary source), so cutting it is a fair control.
+Code `1451f85` (frozen `../thl-run`), no new code. 12 blocks, seeds 202 and 303. Arms (c3 flags +):
+- `e1`: `--cortex-group-frac 1.0`.
+- `e2`: `--ec-lv-ie-shift -2` (less background, the lever that worked for CA3 and CA1).
+- `e3`: `--w-eclii-lv 0` (control: CA1 is the only feedforward input to EC LV).
+- `e4`: `--ec-lv-ie-shift -2 --cortex-group-frac 1.0`.
+Gate: EC LV home z ≥ +0.40 with p < 0.01 on both seeds, and CA1 PYR keeps p < 0.01.
+Validity (else void): EC LV 1–20 Hz in SWR windows; CA1 2–20 Hz.
+Attribution: a pass counts as CA1 → EC only if it holds with `--w-eclii-lv 0`; that run comes next.
+Prediction: e1 +0.15, e2 +0.20, e3 +0.05, e4 +0.30. All fail; e4 is closest.
