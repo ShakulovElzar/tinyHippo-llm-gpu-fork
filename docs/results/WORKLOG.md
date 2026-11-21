@@ -1691,3 +1691,20 @@ Replication `dg3_s303`: CA3 SUP z **+0.37 (p 0.003)**, 9/12 blocks; CA1 +0.14 (0
 Result: **the DG route carries the memory into CA3 on both seeds (p ≤ 0.003), but more weakly than
 rt4 (+0.44 / +0.37 vs +0.69 / +0.66), and below the fixed z threshold on s303.** CA1 does not get
 the memory reliably (+0.25 / +0.14). The CA3 → CA1 hop is the next loss point.
+
+## 36. Strengthen DG → CA3 with anatomical levers (2026-11-21)
+
+Base = `dg3` (§35): `em.base` + `--ec-ca3-k 12 --ec-ca3-w 1.0 --ec-ca3-group-frac 0.7
+--mf-group-frac 1.0 --mf-k 46 --ca3-drive-scale 0.2`. CA3 z +0.44 / +0.37. Code `1451f85` (frozen
+`../thl-run`). Seeds 202 and 303 for every arm. One lever per arm:
+- `sA`: `--mf-k 50` (top of the rat range 46–50).
+- `sB`: `--ca3-drive-scale 0.1` (half the non-specific CA3 drive again).
+- `sC`: `--pp-residual 0.7` (base 0.9): less Poisson stand-in on DG, so EC carries a larger share of
+  the granule-cell drive. Targets the small DG contrast (own pattern only +20–25%).
+- `sD`: `--dg-ec-cluster-sigma 0.03` (base 0.05): tighter EC → DG topography.
+Gate: an arm passes if CA3 SUP home z ≥ +0.40 with p < 0.01 on **both** seeds.
+Validity (else the arm is void): DG GC active ≤ 10% per SWR block; CA3 SUP < 20 Hz;
+CA1 PYR ≥ 2 Hz in SWR windows (the code notes CA1 collapse when CA3 falls near 2.8 Hz).
+Report CA1 z and DG own z / rate contrast.
+Prediction: sA ≈ base (+4 inputs is small); sB passes but CA1 near the 2 Hz limit; sC raises the
+DG contrast and passes; sD changes little.
