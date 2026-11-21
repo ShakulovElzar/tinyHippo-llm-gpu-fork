@@ -1809,3 +1809,14 @@ beats `sD` on this seed (+0.23 vs +0.11), but CA3 is lower (+0.38 vs +0.47).
    CA1 +0.23 has a rough 95% range −0.15 to +0.61. One seed at +0.40 cannot separate c3 from a pass.
 Conclusion: the weak point is DG → CA3 group coverage at low CA3 drive, plus a 12-block readout that
 is too noisy for a +0.40 cut. Not tested: more blocks, or a group-level mossy-fibre map.
+
+**24-block test (pre-registered before the run).** Question: is the s404 miss readout noise (12 blocks)
+or a real seed effect? Config `c3` + `--n-swr 24` (the later flag wins), code `1451f85`, seeds 202,
+303, 404. Readout as above over all 24 blocks; also first 12 vs last 12 blocks, because plasticity
+runs through the whole sleep and later blocks may differ.
+Gate (stricter than before): CA1 PYR z ≥ +0.40 with p < 0.01 on all 3 seeds, and CA3 SUP z ≥ +0.40
+with p < 0.01. Validity as above.
+Report the block-mean z with a 95% interval (± 1.96 SE over blocks).
+Reading: if s404 CA1 stays < +0.40 with its interval below +0.40, the miss is a real seed effect
+(the group-coverage lottery). If it rises to ≥ +0.40, the 12-block miss was noise.
+Prediction: s202 and s303 pass; s404 CA1 is +0.25–0.40, so the gate fails.
