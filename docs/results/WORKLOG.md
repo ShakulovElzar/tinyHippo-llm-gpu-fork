@@ -1681,4 +1681,13 @@ Result: **the anatomical route DG → CA3 carries the memory into CA3 when two t
 the biological mossy in-degree (46) and less non-specific CA3 drive. The in-degree alone lifts
 CA3 from +0.09 to +0.32. Less background lifts it to +0.44, and CA1 starts to follow (+0.25).
 Cost: CA3 and CA1 rates fall to 3.9 / 3.2 Hz. Replay quality was not checked at drive 0.2.
-Next (pre-registered): `dg3_s303`.
+Note: the log's replay ρ (first ripple pair only) is weak in all arms, the `emr` reference included
+(EC LII mode has no CA3 sequence drive), so it does not separate the arms.
+
+Replication `dg3_s303`: CA3 SUP z **+0.37 (p 0.003)**, 9/12 blocks; CA1 +0.14 (0.21); EC LV +0.05
+(0.033); mPFC −0.10 (0.69). DG +1.40, 6% active. CA3 0.40 active / 3.5 Hz, CA1 0.36 / 3.1 Hz.
+**Gate on s303: FAIL** (z +0.37 < +0.40, although p < 0.01). So dg3 passes on 1 of 2 seeds.
+
+Result: **the DG route carries the memory into CA3 on both seeds (p ≤ 0.003), but more weakly than
+rt4 (+0.44 / +0.37 vs +0.69 / +0.66), and below the fixed z threshold on s303.** CA1 does not get
+the memory reliably (+0.25 / +0.14). The CA3 → CA1 hop is the next loss point.
