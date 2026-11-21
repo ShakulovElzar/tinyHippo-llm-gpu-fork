@@ -1631,3 +1631,34 @@ Gate 1 (size ≥ 4 µV, p < 0.01, both seeds): **PASS at 2.0 and at 3.0.** Predi
 Descriptive: G2 is lower than §28 full in 3 of 4 runs. G2 is noisy (§30), so this is not a
 finding. A larger CA1 → EC trace does not improve post-lesion mPFC recall, as expected (the
 lesion leaves only recurrent mPFC weights).
+
+## 35. LLM: the anatomical route EC LII → DG → CA3 (2026-11-21)
+
+Question: can the database memory reach CA3 through DG and the mossy fibres, without the strong
+non-anatomical EC → CA3 path of `rt4` (§32)?
+
+Diagnosis (no new runs, `emr`, `rt1–rt4`; scratch `dgid.py`). DG GC identity in SWR windows:
+each GC gets the pattern of the nearest ring centre (the rule the mossy-fibre grouping uses),
+z across patterns per block, block-label shuffle.
+- DG GC: own z +1.34 to +1.39, 12/12 blocks, p 0.0005 in all 6 runs; 6% active; own pattern
+  fires +19 to +25% over the mean. **DG carries the memory.**
+- CA3 SUP: 73–75% active per SWR window (emr, rt4), 7 Hz. Mostly 3 non-specific Poisson drives.
+- Mossy in-degree is 15 per CA3 SUP cell (`TARGET_INDEGREE`); rat ~46–50 (RESULTS.md table,
+  Amaral et al. 1990; not checked in the source here). With 6% GC active, a CA3 cell gets ~1 mossy
+  spike per window, so the DG code drowns in the background.
+So the memory is lost on the hop DG → CA3.
+
+New opt-in flag `--mf-k K` (commit `1451f85`): mossy in-degree onto CA3 SUP; DEEP scaled by the
+same factor. Default 0 keeps 15 / 8.
+
+Arms (seed 202, `em.base`, frozen `../thl-run` = `1451f85`). All keep the anatomical EC → CA3 of
+`emr` (`--ec-ca3-k 12 --ec-ca3-w 1.0 --ec-ca3-group-frac 0.7`):
+- `dg1`: `--mf-group-frac 1.0 --mf-k 46`.
+- `dg2`: `--mf-group-frac 0.7 --mf-k 46` (only the in-degree changes vs emr).
+- `dg3`: dg1 + `--ca3-drive-scale 0.2` (less non-specific CA3 drive; a stand-in for inputs the
+  model now has explicitly).
+S0 with `--mf-k` off, in the same batch.
+Gate (same as §32): an arm passes if CA3 SUP home z ≥ +0.40 with p < 0.01. Validity: DG GC
+active ≤ 10% and CA3 SUP not runaway (rate < 20 Hz). Report CA1 z.
+If an arm passes: seed 303, then the CA3 → CA1 hop (CA1 is at chance even in rt4).
+Prediction: dg1 passes (z ~ +0.5); dg2 below gate; dg3 highest; CA1 stays < +0.2 in all arms.
