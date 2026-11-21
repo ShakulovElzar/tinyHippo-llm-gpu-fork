@@ -1135,3 +1135,19 @@ Prediction: e1 +0.15, e2 +0.20, e3 +0.05, e4 +0.30. All fail; e4 is closest.
 - Less intrinsic drive (e2, e4) makes EC LV more selective but nearly silent.
 - Status: CA1 → EC LV is the loss point. Untested levers: weaker CA1-driven FF inhibition
   (`--ec-lv-ff-inhib`, exists), a stronger CA1 → EC LV synapse (no flag yet). Each needs the e3 control.
+
+## §39. Weaker CA1-driven FF inhibition onto EC LV (pre-registered 2026-11-21, before the runs)
+
+Question: does CA1 → EC LV carry identity when the CA1-driven PV inhibition onto EC LV is removed?
+§23 C found that SWR windows lower EC LV (2.5 vs 4.9 Hz) and that EC LV identity comes from EC LII.
+`--ec-lv-ff-inhib 0` keeps the PV pool (numpy wiring, noise streams unchanged) with zero weight.
+12 blocks, seeds 202 and 303, frozen code `1451f85`. Arms (`c3` flags +):
+- `f1`: `--ec-lv-ff-inhib 0`.
+- `f2`: `f1` + `--w-eclii-lv 0` (control: CA1 is the only feedforward input).
+- `f3`: `f1` + `--ec-lv-ie-shift -2 --cortex-group-frac 1.0` (`e4` without FF inhibition).
+- `f4`: `f3` + `--w-eclii-lv 0` (control).
+Gate (CA1 → EC LV claim): a control arm (`f2` or `f4`) has EC LV home z ≥ +0.40 with p < 0.01 on
+both seeds, and CA1 PYR keeps p < 0.01. `f1` and `f3` only show the full-input effect.
+Validity (else void): EC LV 1–20 Hz in SWR windows; CA1 2–20 Hz.
+Prediction: EC LV SWR rate rises above the whole-run rate. z: f1 +0.20, f2 +0.05, f3 +0.40,
+f4 +0.10. Controls fail: the CA1 → EC LV synapse (K 30, w 0.45) is too weak alone.
