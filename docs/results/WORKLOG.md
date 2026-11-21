@@ -989,7 +989,7 @@ Not checked: a post-lesion recall probe in EC itself (the probe cues mPFC only);
 ## 22. Sleep learning in cortex and post-lesion recall (old §22–§31, §33, §34; 2026-11-18 to 11-20)
 
 Merged on 2026-11-21. Old § numbers stay valid as labels; the full per-step text (configs, gates,
-predictions written before each run) is in git before commit "WORKLOG: merge §22–§38". New sections
+predictions written before each run) is in git at commit `0a77acb`. New sections
 start at §39.
 
 Question: does sleep (STC tag-and-capture on CA1 → EC LII, plus mPFC Hebbian learning) write
