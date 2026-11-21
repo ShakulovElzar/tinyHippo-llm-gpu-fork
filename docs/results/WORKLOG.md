@@ -1764,3 +1764,22 @@ Gate: an arm passes if CA1 PYR home z ≥ +0.40 with p < 0.01 on both seeds, and
 z ≥ +0.40 with p < 0.01.
 Validity (else void): CA1 PYR 2–20 Hz and CA3 SUP < 20 Hz in SWR windows; DG GC active ≤ 10%.
 Prediction: c1 ~ +0.25 (fails); c2 ~ +0.30 (fails); c3 passes; c4 CA1 near 2 Hz.
+
+**Result.** Rates are in SWR windows (300–420, 600–720 ms per block). DG GC z +1.27–1.41 (p 0.0005)
+and 6–7% active in every arm. Seeds 202 / 303:
+
+| arm | CA3 SUP z (p) | CA1 PYR z (p) | CA3 / CA1 Hz | verdict |
+|---|---|---|---|---|
+| `c1` | +0.37 (0.002) / +0.44 (0.001) | +0.21 (0.04) / +0.10 (0.30) | 4.0 / 3.4, 3.5 / 2.8 | fail |
+| `c2` | +0.43 (0.001) / +0.50 (0.001) | +0.19 (0.10) / +0.32 (0.017) | 3.8 / 3.8, 3.4 / 2.9 | fail |
+| `c3` | +0.85 (0.0005) / +0.64 (0.0005) | **+0.47 (0.001) / +0.75 (0.0005)** | 1.6 / 3.9, 1.3 / 3.9 | **pass** |
+| `c4` | +0.47 (0.002) / +0.51 (0.002) | +0.13 (0.21) / +0.14 (0.21) | 2.6 / 2.4, 2.3 / 2.1 | fail |
+
+- Prediction held on all four arms. Cleaner Schaffer wiring (c1, c2) does not help: CA1 noise comes
+  from the CA3 background, not from foreign Schaffer inputs.
+- `c3` passes on 2 seeds and is valid (CA1 3.9 Hz). The same change also raises CA3 (+0.85 / +0.64 vs
+  sD +0.41 / +0.51).
+- Caveats: CA3 SUP is only 1.3–1.6 Hz in SWR windows, low for a ripple. DG is 6–7% active, above the
+  2–4% target. 1% only, 2 seeds, 3 threads: a pilot until a third seed and 12%.
+- c3 config: `em.base` + `--ec-ca3-k 12 --ec-ca3-w 1.0 --ec-ca3-group-frac 0.7 --mf-group-frac 1.0
+  --mf-k 46 --dg-ec-cluster-sigma 0.03 --ca3-drive-scale 0.1 --schaffer-w-scale 1.5`.
