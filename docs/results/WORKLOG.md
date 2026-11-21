@@ -1116,3 +1116,22 @@ Gate: EC LV home z ≥ +0.40 with p < 0.01 on both seeds, and CA1 PYR keeps p < 
 Validity (else void): EC LV 1–20 Hz in SWR windows; CA1 2–20 Hz.
 Attribution: a pass counts as CA1 → EC only if it holds with `--w-eclii-lv 0`; that run comes next.
 Prediction: e1 +0.15, e2 +0.20, e3 +0.05, e4 +0.30. All fail; e4 is closest.
+
+**Result (step C).** EC LV / mPFC home z (p); rates in SWR windows / whole run. `c3` = the 12-block base.
+
+| arm | EC LV z (p) | mPFC z (p) | CA1 z (p) | EC LV Hz | valid | gate |
+|---|---|---|---|---|---|---|
+| `c3` (base) | +0.11 (0.001) / +0.22 (0.0005) | +0.02 / +0.08 | +0.47 / +0.75 | 2.5 / 2.4 (all 4.9 / 4.7) | yes | fail |
+| `e1` frac 1.0 | +0.16 (0.001) / +0.32 (0.0005) | +0.06 / +0.17 (0.003) | +0.37 / +0.82 | 2.5 / 2.6 | yes | fail |
+| `e2` ie −2 | +0.17 (0.014) / +0.18 (0.017) | +0.01 / +0.12 | +0.25 (0.04) / +0.74 | **0.6 / 0.7** | **no** | void |
+| `e3` no EC LII → LV | **−0.01 (0.29) / +0.09 (0.007)** | +0.01 / +0.11 | +0.51 / +0.68 | 2.3 / 2.5 | yes | fail |
+| `e4` e1 + e2 | +0.31 (0.0005) / +0.44 (0.0005) | +0.11 / +0.28 (0.0035) | +0.50 / +0.66 | **0.7 / 0.6** | **no** | void |
+
+- No arm passes. Prediction held: all fail, e4 closest (+0.31 / +0.44, but void: EC LV < 1 Hz).
+- **Key finding (e3): in `c3`, EC LV identity comes from EC LII, not from CA1.** Without EC LII → LV,
+  EC LV falls to −0.01 / +0.09 while CA1 still carries the memory (+0.51 / +0.68). CA1 → EC LV (K 30,
+  w 0.45, CA1-driven FF inhibition −0.25) passes almost nothing.
+- SWR windows lower EC LV (2.5 vs 4.9 Hz whole run): CA1 activity drives net inhibition onto EC LV.
+- Less intrinsic drive (e2, e4) makes EC LV more selective but nearly silent.
+- Status: CA1 → EC LV is the loss point. Untested levers: weaker CA1-driven FF inhibition
+  (`--ec-lv-ff-inhib`, exists), a stronger CA1 → EC LV synapse (no flag yet). Each needs the e3 control.
