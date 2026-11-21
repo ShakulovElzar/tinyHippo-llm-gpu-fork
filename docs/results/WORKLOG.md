@@ -1708,3 +1708,33 @@ CA1 PYR ≥ 2 Hz in SWR windows (the code notes CA1 collapse when CA3 falls near
 Report CA1 z and DG own z / rate contrast.
 Prediction: sA ≈ base (+4 inputs is small); sB passes but CA1 near the 2 Hz limit; sC raises the
 DG contrast and passes; sD changes little.
+
+**Result.** CA3 SUP / CA1 home z (p), block-label shuffle; rates in SWR windows.
+
+| arm | seed | CA3 z (p) | CA1 z (p) | CA3 / CA1 Hz | DG active, own z | valid | gate |
+|---|---|---|---|---|---|---|---|
+| `dg3` (base) | 202 | +0.44 (0.001) | +0.25 (0.026) | 3.9 / 3.2 | 6%, +1.27 | yes | |
+| `dg3` (base) | 303 | +0.37 (0.003) | +0.14 (0.21) | 3.5 / 3.1 | 6%, +1.40 | yes | |
+| `sA` mf-k 50 | 202 | +0.49 (0.002) | +0.33 (0.016) | 3.9 / 2.9 | 7%, +1.32 | yes | |
+| `sA` | 303 | +0.36 (0.008) | +0.20 (0.077) | 3.6 / 2.8 | 6%, +1.34 | yes | FAIL |
+| `sB` drive 0.1 | 202 | +0.53 (0.001) | +0.42 (0.005) | 1.6 / **1.8** | 6%, +1.28 | **no** | |
+| `sB` | 303 | +0.42 (0.0035) | +0.60 (0.0005) | 1.3 / **1.5** | 7%, +1.38 | **no** | VOID |
+| `sC` pp-residual 0.7 | 202 | +0.31 (0.015) | +0.28 (0.045) | 3.8 / 3.0 | 4%, +1.23 | yes | |
+| `sC` | 303 | +0.30 (0.016) | +0.14 (0.27) | 3.5 / 3.6 | 4%, +1.38 | yes | FAIL |
+| `sD` EC→DG σ 0.03 | 202 | +0.41 (0.001) | +0.21 (0.039) | 4.0 / 3.2 | 6%, +1.27 | yes | |
+| `sD` | 303 | +0.51 (0.0005) | +0.14 (0.20) | 3.5 / 2.8 | 6%, +1.41 | yes | **PASS** |
+
+Gate: **only `sD` passes** (both seeds, valid). `sB` passes the z gate but is void: CA1 < 2 Hz.
+Prediction: sA ≈ base right; sB near the CA1 limit — it went below (void); sC passes wrong
+(DG got sparser, 4%, and CA3 fell); sD changes little wrong (it passes).
+
+Caveats:
+- The sD margin is small: s202 +0.41 is not above dg3 s202 (+0.44). The gain is on s303 only
+  (+0.37 → +0.51). With 3-thread run noise this may be noise.
+- DG own z did not rise in any arm (+1.23 to +1.41). So no lever sharpened the DG code itself.
+- Side finding, `sB`: with half the background drive CA1 gets the memory (+0.42 / +0.60,
+  p ≤ 0.005) — the first CA1 pass in EC LII mode — but at 1.5–1.8 Hz, below the validity limit.
+  So the non-specific CA3 drive is what hides the memory in CA3 and CA1.
+
+Noise check (fixed before the runs): seed 404 for `sD` and `dg3`. sD counts as a real gain over
+dg3 only if sD z ≥ +0.40 (p < 0.01) on s404 and sD > dg3 on 2 of 3 seeds.
