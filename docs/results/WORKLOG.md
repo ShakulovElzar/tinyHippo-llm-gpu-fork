@@ -1738,3 +1738,13 @@ Caveats:
 
 Noise check (fixed before the runs): seed 404 for `sD` and `dg3`. sD counts as a real gain over
 dg3 only if sD z ≥ +0.40 (p < 0.01) on s404 and sD > dg3 on 2 of 3 seeds.
+
+Noise check, seed 404: `sD` CA3 +0.47 (p 0.0045), CA1 +0.11 (0.27), 3.6 / 2.8 Hz;
+`dg3` CA3 +0.38 (p 0.009), CA1 +0.20 (0.077), 3.6 / 2.9 Hz.
+sD z ≥ +0.40 on s404: yes. sD > dg3: 2 of 3 seeds (303, 404). **Noise check PASS.**
+
+Result: **sD (EC→DG σ 0.03) is the anatomical route that carries the memory into CA3 on 3 of 3
+seeds** (+0.41 / +0.51 / +0.47, p ≤ 0.0045). The gain over dg3 is small (mean +0.06). CA1 stays
+at chance on all 3 seeds (+0.21 / +0.14 / +0.11). The CA3 → CA1 hop is now the loss point.
+Config for the next step: `em.base` + `--ec-ca3-k 12 --ec-ca3-w 1.0 --ec-ca3-group-frac 0.7
+--mf-group-frac 1.0 --mf-k 46 --ca3-drive-scale 0.2 --dg-ec-cluster-sigma 0.03`.
