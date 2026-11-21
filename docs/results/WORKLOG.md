@@ -1787,3 +1787,10 @@ and 6–7% active in every arm. Seeds 202 / 303:
 **Third seed (pre-registered before the run).** `c3` on seed 404, same code `1451f85` and config.
 Same gate and validity rules as above. Reference on seed 404: `sD` CA3 +0.47, CA1 +0.11.
 Prediction: CA1 z ≥ +0.40 (pass).
+
+**Third-seed result: fail.** `c3_s404`: CA1 PYR z +0.23 (p 0.011), CA3 SUP +0.38 (p 0.0035), DG GC
++1.40 (6.4% active). Rates valid (CA3 1.4 Hz, CA1 3.8 Hz). Both CA1 and CA3 miss +0.40. CA1 still
+beats `sD` on this seed (+0.23 vs +0.11), but CA3 is lower (+0.38 vs +0.47).
+- `c3` passes on 2 of 3 seeds. The prediction failed. The CA1 gain is real in direction on all 3
+  seeds (+0.26 / +0.61 / +0.12 over sD) but its size depends on the seed.
+- Status: CA3 → CA1 is not solved. Do not treat `c3` as the base for the next hop without more seeds.
