@@ -1183,3 +1183,21 @@ Gate: EC LV home z ≥ +0.40 with p < 0.01 on both seeds, and CA1 PYR keeps p < 
 Validity (else void): EC LV 1–20 Hz in SWR windows; CA1 2–20 Hz.
 Prediction: EC LV SWR rate rises to 2–4 Hz (g1) and 4–8 Hz (g2). z g1 +0.30, g2 +0.30: CA1 home-group
 modulation (10–20%) limits what EC LV can inherit. Both fail on size.
+
+**Result (§40).** Home z (p), seeds 202 / 303. EC LII → LV off in all arms. Frozen code `7c5fdd7`.
+
+| arm | EC LV z (p) | CA1 z (p) | mPFC z (p) | EC LV Hz (SWR) | valid | gate |
+|---|---|---|---|---|---|---|
+| `f4` (w 0.45, §39) | +0.18 (0.027) / +0.29 (0.0015) | +0.41 / +0.64 | +0.06 / +0.11 | 1.0 / 0.9 | s303 no | fail |
+| `g1` w 0.9 | +0.13 (0.14) / **+0.50 (0.0005)** | **+0.15 (0.14)** / +0.64 | +0.24 (0.017) / +0.29 (0.009) | 2.5 / 1.8 | yes | fail (s202 CA1) |
+| `g2` w 1.35 | **+0.35 (0.006)** / **+0.52 (0.0015)** | +0.42 (0.005) / +0.71 | +0.28 (0.016) / +0.43 (0.011) | 3.6 / 3.2 | yes | fail (s202 size) |
+
+- No arm passes. Closest: `g2`, which passes on s303 and misses the size on s202 (+0.35 vs +0.40, p 0.006).
+- **CA1 → EC LV now carries identity with EC LII input cut.** EC LV z is 0.73–0.89× the CA1 z in g2
+  and g1 s303; at w 0.45 (f4) it was 0.44×. The hop is no longer the main loss; CA1 on s202 is.
+- g1 s202: CA1 itself lost identity (+0.15, p 0.14), so EC LV had nothing to inherit. Cause not checked
+  (EC LV → CA3 feedback, or 3-thread noise on the weak seed).
+- mPFC follows: +0.28 / +0.43 in g2, p 0.016 / 0.011, just above the p gate.
+- Prediction: z higher than +0.30 on s303; g2 rate lower than predicted (3.6 / 3.2 vs 4–8 Hz).
+- EC LV SWR rate ≈ outside rate in g2: identity comes from which cells fire, not from a SWR burst.
+- Next: g2 on more seeds or 24 blocks, to see whether s202 is noise or a weak seed (as s404 in §23 B).
