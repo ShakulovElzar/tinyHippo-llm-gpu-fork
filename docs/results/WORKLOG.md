@@ -1820,3 +1820,21 @@ Report the block-mean z with a 95% interval (± 1.96 SE over blocks).
 Reading: if s404 CA1 stays < +0.40 with its interval below +0.40, the miss is a real seed effect
 (the group-coverage lottery). If it rises to ≥ +0.40, the 12-block miss was noise.
 Prediction: s202 and s303 pass; s404 CA1 is +0.25–0.40, so the gate fails.
+
+**24-block result: gate fails on s404.** All runs valid (CA1 3.6–4.0 Hz, CA3 1.4–1.6 Hz, DG 6.4–6.8%
+active). z with 95% interval over blocks; halves = first 12 / last 12 blocks:
+
+| seed | CA3 SUP z | CA1 PYR z | CA1 halves | gate |
+|---|---|---|---|---|
+| 202 | +0.80 [+0.63, +0.97] p 0.0005 | +0.55 [+0.36, +0.73] p 0.0005 | +0.53 / +0.57 | pass |
+| 303 | +0.59 [+0.37, +0.81] p 0.0005 | +0.62 [+0.42, +0.81] p 0.0005 | +0.75 / +0.48 | pass |
+| 404 | +0.50 [+0.33, +0.66] p 0.0005 | +0.30 [+0.10, +0.50] p 0.0005 | +0.23 / +0.36 | fail |
+
+- Prediction held (s404 CA1 in +0.25–0.40).
+- The pre-registered reading is undecided: the s404 CA1 interval contains +0.40, so the data neither
+  confirm noise nor a real seed effect. The point estimate stays below the s202 / s303 values.
+- New with 24 blocks: CA1 carries the memory above chance on all 3 seeds (p 0.0005, every interval
+  above 0). The +0.40 size gate fails only on s404.
+- The s404 first half (+0.23) repeats the 12-block run (+0.23). The s404 second half rises (CA3 +0.38
+  → +0.61, CA1 +0.23 → +0.36), but s303 CA1 falls (+0.75 → +0.48). No consistent trend over sleep.
+- Status: `c3` = CA1 identity on 3 of 3 seeds, size ≥ +0.40 on 2 of 3. CA3 → CA1 is partly solved.
