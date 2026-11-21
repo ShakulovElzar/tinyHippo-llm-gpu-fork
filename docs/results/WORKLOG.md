@@ -1794,3 +1794,18 @@ beats `sD` on this seed (+0.23 vs +0.11), but CA3 is lower (+0.38 vs +0.47).
 - `c3` passes on 2 of 3 seeds. The prediction failed. The CA1 gain is real in direction on all 3
   seeds (+0.26 / +0.61 / +0.12 over sD) but its size depends on the seed.
 - Status: CA3 → CA1 is not solved. Do not treat `c3` as the base for the next hop without more seeds.
+
+**Seed-404 diagnosis (existing files, no new runs).** Scratch scripts `diag404*.py`.
+1. Input is the same on all seeds: EC LII z +1.35–1.41, DG GC +1.31–1.40, every block positive.
+   The loss starts at DG → CA3.
+2. CA3 covers its home groups unevenly. With `--mf-group-frac 1.0` the mossy fibres select a pattern
+   (3–4 of 10 groups), not a group. Home groups (pattern × group) with mean z > +0.5:
+   c3 9/10, 6/10, 3/10 (s202 / s303 / s404); sD 4/10, 5/10, 6/10. On s404, c3 loses coverage
+   against sD; the lower CA3 drive (0.1) makes coverage depend on the wiring draw.
+3. CA3 → CA1 transfer does not depend on the seed: block × group r(CA3, CA1) is +0.46 / +0.49 / +0.39
+   (c3) and +0.50 / +0.42 / +0.40 (sD). CA1 fails on s404 because CA3 is weak, not because of Schaffer.
+4. Spillover into the next sequence group (g+1) is ruled out: those groups have z −0.09 to −0.39.
+5. Noise: with 12 blocks the SE of the block-mean z is about 0.11 (CA3) and 0.19 (CA1) on s404.
+   CA1 +0.23 has a rough 95% range −0.15 to +0.61. One seed at +0.40 cannot separate c3 from a pass.
+Conclusion: the weak point is DG → CA3 group coverage at low CA3 drive, plus a 12-block readout that
+is too noisy for a +0.40 cut. Not tested: more blocks, or a group-level mossy-fibre map.
