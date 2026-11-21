@@ -1838,3 +1838,13 @@ active). z with 95% interval over blocks; halves = first 12 / last 12 blocks:
 - The s404 first half (+0.23) repeats the 12-block run (+0.23). The s404 second half rises (CA3 +0.38
   → +0.61, CA1 +0.23 → +0.36), but s303 CA1 falls (+0.75 → +0.48). No consistent trend over sleep.
 - Status: `c3` = CA1 identity on 3 of 3 seeds, size ≥ +0.40 on 2 of 3. CA3 → CA1 is partly solved.
+
+**Check before a group-level mossy-fibre map (no new runs; scratch `mfchk.py`, files `c3L_s*`).**
+1. DG spikes spread over the whole pattern segment of the ring (6 bins, 12–22% each). A group-level
+   map would give every home group DG input, so it is feasible.
+2. But which CA3 home groups win is not stable over sleep: r(first 12 blocks, last 12 blocks) of the
+   10 home-group z values = +0.13 / +0.72 / +0.48 (s202 / s303 / s404).
+3. Under the current pattern-level map every home group already gets the same expected MF drive.
+Correction to the seed-404 diagnosis: uneven coverage is at least partly dynamic (competition between
+home groups), not only a fixed wiring draw. A group-level MF map does not remove that competition, so
+the expected gain is small. Not coded yet.
