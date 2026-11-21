@@ -1748,3 +1748,19 @@ seeds** (+0.41 / +0.51 / +0.47, p ≤ 0.0045). The gain over dg3 is small (mean 
 at chance on all 3 seeds (+0.21 / +0.14 / +0.11). The CA3 → CA1 hop is now the loss point.
 Config for the next step: `em.base` + `--ec-ca3-k 12 --ec-ca3-w 1.0 --ec-ca3-group-frac 0.7
 --mf-group-frac 1.0 --mf-k 46 --ca3-drive-scale 0.2 --dg-ec-cluster-sigma 0.03`.
+
+## 37. The CA3 → CA1 hop in EC LII mode (2026-11-21)
+
+Base = `sD` (§36): CA3 z +0.41 / +0.51 / +0.47, CA1 +0.21 / +0.14 / +0.11. In SWR windows CA3 SUP
+is 45% active, CA1 37%. Schaffer: K 500 per CA1 cell, `--schaffer-group-frac 0.7` (10 CA3 groups).
+Hint from `sB` (§36): with less CA3 background, CA1 got the memory (+0.42 / +0.60) but fell to
+1.5–1.8 Hz. Code `1451f85` (frozen `../thl-run`), no new code. Seeds 202 and 303. Arms:
+- `c1`: `--schaffer-group-frac 1.0` (every Schaffer input from the home group).
+- `c2`: `--schaffer-k 264 --schaffer-group-frac 1.0` (the §26 Schaffer config).
+- `c3`: `--ca3-drive-scale 0.1 --schaffer-w-scale 1.5` (sB background; CA1 rate restored through the
+  Schaffer path, the path that carries the signal).
+- `c4`: `--ca3-drive-scale 0.15`.
+Gate: an arm passes if CA1 PYR home z ≥ +0.40 with p < 0.01 on both seeds, and CA3 SUP keeps
+z ≥ +0.40 with p < 0.01.
+Validity (else void): CA1 PYR 2–20 Hz and CA3 SUP < 20 Hz in SWR windows; DG GC active ≤ 10%.
+Prediction: c1 ~ +0.25 (fails); c2 ~ +0.30 (fails); c3 passes; c4 CA1 near 2 Hz.
