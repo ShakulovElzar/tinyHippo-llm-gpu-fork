@@ -1366,6 +1366,6 @@ All 8 runs finished; all seeds valid (SWR windows: CA3 1.7–2.0 Hz, CA1 3.9–5
   Upstream identity is intact (CA3 +0.6–0.9, CA1 +0.3–0.6).
 - Cause (from the weights): 98–99% of CA1 → EC LV synapses get LTP, all by about the same +0.66.
   The rule potentiates almost every active synapse. It has no competition, so it writes gain, not pattern.
-  EC LV rate rises 4 → 5.5 Hz in L. This is the same saturation as the §22 EC LII STC.
+  EC LV rate rises 4 → 5.5 Hz in L.
 - Next candidate (not run): add competition to the STC rule on this pathway (for example per-cell weight
   normalization, or LTD for synapses that are active but untagged), then repeat §45 unchanged.
