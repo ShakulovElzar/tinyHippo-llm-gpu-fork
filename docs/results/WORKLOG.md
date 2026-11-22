@@ -1385,3 +1385,28 @@ Readouts, gates, validity: exactly as §45 (scorer `out/em/score_cons.py`, uncha
 Primary 1: specificity p < 0.01 on ≥ 3/4 seeds. Primary 2: dw-label EC LV z, second half, L − N > 0
 on ≥ 3/4 seeds and paired t-interval (df 3) excludes 0.
 Prediction (uncertain): primary 1 passes on 2/4 seeds (fail); primary 2 fails.
+
+### §46 result (2026-11-22): FAIL on both primaries
+
+All 4 runs valid (SWR windows: CA3 1.7–2.0 Hz, CA1 3.7–4.9 Hz, EC LV 3.6–4.7 Hz). Twins `N45_s*`.
+
+| seed | LTP frac | mean Δw | spec z | spec p | dw-label z 2nd half L / N | L − N |
+|---|---|---|---|---|---|---|
+| 202 | 0.191 | +0.216 | +1.1 | 0.118 | −0.005 / +0.091 | −0.096 |
+| 303 | 0.194 | +0.212 | +0.8 | 0.212 | −0.043 / +0.184 | −0.227 |
+| 404 | 0.186 | +0.191 | +1.1 | 0.138 | +0.033 / −0.046 | +0.079 |
+| 505 | 0.196 | +0.227 | +1.2 | 0.106 | −0.256 / −0.089 | −0.167 |
+
+- Primary 1: p < 0.01 on 0/4 seeds. FAIL (prediction 2/4: wrong, worse).
+- Primary 2: L − N > 0 on 1/4; mean −0.10, 95% t-interval [−0.31, +0.11]. FAIL (as predicted).
+- mPFC LOO: L 0.25–0.38, N 0.25–0.54. No gain.
+- Top-k worked as built: capture fell from 98% to 19%, EC LV rate stayed at the twin level (no gain effect).
+- Exploratory (not pre-registered): spec z is positive on all 4 seeds (+0.8 to +1.2); Stouffer z +2.1,
+  p 0.018. At most a very small pattern bias in the weights.
+- Interpretation (hypothesis, not tested): the competition is among the inputs of one cell. It picks
+  the inputs with the best spike timing, not inputs of one pattern. With random CA1 → EC LV wiring an
+  EC LV cell has no pattern preference to start from, and nothing makes different cells pick different
+  patterns. Competitive learning usually also needs competition between cells (for example k-winners
+  inhibition in EC LV during replay).
+- Cheap check before any new rule: in the twins `N45_s*`, are EC LV cells pattern-selective at all
+  (cross-validated preferred pattern)? If not, a per-cell Hebbian rule has nothing to amplify.
