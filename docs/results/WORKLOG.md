@@ -1410,3 +1410,29 @@ All 4 runs valid (SWR windows: CA3 1.7–2.0 Hz, CA1 3.7–4.9 Hz, EC LV 3.6–4
   inhibition in EC LV during replay).
 - Cheap check before any new rule: in the twins `N45_s*`, are EC LV cells pattern-selective at all
   (cross-validated preferred pattern)? If not, a per-cell Hebbian rule has nothing to amplify.
+
+## §47. Diagnostic: do EC LV cells have a pattern preference in the twins? (2026-11-22, exploratory, no new runs)
+
+Not pre-registered; analysis of existing files only (`N45_s*`, wiring from `L45_s*`, same seed and build).
+1. Label-free readouts (`out/em/score_sel.py`) have no power here. Positive control fails: CA1, which has
+   group z +0.3–0.6, gives xval p < 0.01 on 1/4 seeds. EC LV: 0/4. This says nothing about EC LV.
+2. Wiring-based labels (`out/em/score_bias.py`): each EC LV cell has 30 random CA1 inputs; its top
+   pattern gets 0.44 of the input weight (1/3 if even). EC LV group z with these labels, second half,
+   label-shuffle null:
+
+   | seed | 202 | 303 | 404 | 505 |
+   |---|---|---|---|---|
+   | z | +0.66 | +0.20 | +0.42 | +0.22 |
+   | p | 0.007 | 0.12 | 0.021 | 0.14 |
+
+   All 4 positive, mean +0.38. EC LV cells do follow the chance bias of their wiring. The §46 hypothesis
+   ("no preference to start from") is wrong. ("drive" labels, w × CA1 rate, are biased toward the pattern
+   with the highest CA1 rate; ignore them.)
+3. The STC rule does not follow that preference. Per cell, the pattern with max Δw matches the wiring
+   preference on 25–35% (L45) and 32–37% (L46) of cells; chance 33%. Mean Δw of inputs from the preferred
+   pattern vs the others: L46 +0.006 higher on average (+0.21 vs +0.21).
+- Conclusion: the bottleneck is the rule, not the input. The STC rule is a correlation rule: it
+  potentiates any CA1 input active before an EC LV spike in the SWR window. Most CA1 cells fire in
+  every SWR, so mean co-activity dominates and the pattern covariance is lost.
+- Candidate next rule (not built): a covariance rule (Δw ∝ (pre − ⟨pre⟩)(post − ⟨post⟩) over SWR
+  events, or LTD for pre spikes without a post spike), on CA1 → EC LV, same §45 gates.
