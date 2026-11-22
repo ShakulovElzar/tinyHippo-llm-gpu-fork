@@ -1436,3 +1436,20 @@ Not pre-registered; analysis of existing files only (`N45_s*`, wiring from `L45_
   every SWR, so mean co-activity dominates and the pattern covariance is lost.
 - Candidate next rule (not built): a covariance rule (Δw ∝ (pre − ⟨pre⟩)(post − ⟨post⟩) over SWR
   events, or LTD for pre spikes without a post spike), on CA1 → EC LV, same §45 gates.
+
+## §48. Consolidation: covariance rule on CA1 → EC LV (pre-registered 2026-11-23, before the runs)
+
+Why: §47 showed EC LV cells have a wiring-driven pattern preference, but the STC rule (a correlation
+rule) does not follow it.
+New opt-in flag `--lv-cov-eta ETA` (code `2588ab8`): on CA1 → EC LV, the STC hook is replaced by
+Δw = ETA × w_init × (x − ⟨x⟩)(y − ⟨y⟩) per SWR window (fwd and rev), x and y = spike counts of the
+CA1 and EC LV cell in the window, ⟨·⟩ = running means (start at the first window, rate 0.1).
+Clip [0.1, 1.5] × w_init. EC LII STC and mPFC assoc are unchanged.
+S0 digest `8631eb29…` unchanged. Smoke test (6 blocks, ETA 0.1): 92% of synapses change,
+relative Δw mean +0.09, SD 0.13, 0.5% at the cap.
+Config `L48` = `L45` + `--lv-cov-eta 0.1` (ETA fixed here, no tuning). Seeds 202, 303, 404, 505.
+Twins `N45_s*` reused (with `--no-stc-hook` the hook is not built, so the flag does nothing).
+Primary 1 and 2, secondary and validity: exactly as §45 (`out/em/score_cons.py`).
+Added secondary (from §47, `out/em/score_bias.py` logic): per cell, does the max-Δw pattern match the
+wiring preference? Report the agreement (chance 1/3) and mean Δw preferred minus other.
+Prediction (uncertain): agreement > 1/3 on 4/4 seeds; primary 1 passes on 2/4 (fail); primary 2 fails.
