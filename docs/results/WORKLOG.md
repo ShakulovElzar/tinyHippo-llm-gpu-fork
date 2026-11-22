@@ -1369,3 +1369,19 @@ All 8 runs finished; all seeds valid (SWR windows: CA3 1.7–2.0 Hz, CA1 3.9–5
   EC LV rate rises 4 → 5.5 Hz in L.
 - Next candidate (not run): add competition to the STC rule on this pathway (for example per-cell weight
   normalization, or LTD for synapses that are active but untagged), then repeat §45 unchanged.
+
+## §46. Consolidation: §45 with competition at capture (top-k per cell) (pre-registered 2026-11-22, before the runs)
+
+Why: in §45, 98% of CA1 → EC LV synapses got L-LTP, and 67% of them ended exactly at the cap
+(1.5 × w_init; s202). The trace was flat. Per-cell normalisation (`--stc-lv-norm`, `ffb8b6a`) was
+built but not run: it only rescales each cell's inputs, so it cannot make a flat trace specific.
+New opt-in flag `--stc-lv-topk FRAC` (code `10a9366`): per EC LV cell, at most round(FRAC × inputs)
+synapses get capture over the whole run; among the candidates, the strongest live tags win.
+S0 digest `8631eb29…` unchanged. Smoke test (6 blocks, FRAC 0.2): LTP 15%, per-cell max 20%.
+Config `L46` = `L45` + `--stc-lv-topk 0.2`. Seeds 202, 303, 404, 505.
+Twin: the §45 twins `N45_s*` are reused. They are the same config: with `--no-stc-hook` the new flag
+does nothing.
+Readouts, gates, validity: exactly as §45 (scorer `out/em/score_cons.py`, unchanged).
+Primary 1: specificity p < 0.01 on ≥ 3/4 seeds. Primary 2: dw-label EC LV z, second half, L − N > 0
+on ≥ 3/4 seeds and paired t-interval (df 3) excludes 0.
+Prediction (uncertain): primary 1 passes on 2/4 seeds (fail); primary 2 fails.
