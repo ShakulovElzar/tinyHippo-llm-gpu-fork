@@ -4086,6 +4086,33 @@ def build_stc_hook(ec_module, w_init_override=None) -> STCHook:
     )
 
 
+def run_cov_hook(stc: STCHook, mod, t0: float, t1: float, eta: float,
+                 alpha: float = 0.1, w_min_rel: float = 0.1, w_max_rel: float = 1.5) -> None:
+    """WORKLOG 48 (opt-in): covariance rule on one SWR window, in place of STC.
+    x = CA1 spike count per cell, y = post spike count per cell in [t0, t1].
+    dw = eta * w_init * (x - <x>)(y - <y>); <.> = running means over SWR windows
+    (start at the first window, update after dw with rate alpha). Clip to [w_min, w_max] x w_init."""
+    import simbackend as sim
+    if not hasattr(stc, "cov_pre_u"):
+        stc.cov_pre_u, stc.cov_pre_i = np.unique(stc.pre_ids, return_inverse=True)
+        stc.cov_mx = stc.cov_my = None
+    def _cnt(rec, gids):
+        ev = sim.GetStatus(rec, "events")[0]
+        t = np.asarray(ev["times"]); sd = np.asarray(ev["senders"], dtype=np.int64)
+        sd = sd[(t >= t0) & (t < t1)]
+        i = np.searchsorted(gids, sd); ok = (i < len(gids)) & (gids[np.minimum(i, len(gids) - 1)] == sd)
+        return np.bincount(i[ok], minlength=len(gids)).astype(np.float64)
+    x = _cnt(mod.ca1_spike_rec, stc.cov_pre_u)
+    _post_g = np.sort(stc.ec_gids); y = _cnt(mod.spike_rec, _post_g)[np.searchsorted(_post_g, stc.ec_gids)]
+    if stc.cov_mx is None:
+        stc.cov_mx, stc.cov_my = x.copy(), y.copy()
+    dx = (x - stc.cov_mx)[stc.cov_pre_i]; dy = (y - stc.cov_my)[stc.post_idx]
+    stc.w = np.clip(stc.w + eta * stc.w_init * dx * dy, w_min_rel * stc.w_init, w_max_rel * stc.w_init).astype(stc.w.dtype)
+    stc.cov_mx += alpha * (x - stc.cov_mx); stc.cov_my += alpha * (y - stc.cov_my)
+    stc.n_calls += 1
+    sim.SetStatus(stc.conns, "weight", stc.w.tolist())
+
+
 def run_stc_hook(
     stc        : STCHook,
     ec_module,
@@ -5736,6 +5763,10 @@ Dentate gyrus (Phase 6.2):
         help="WORKLOG 46: with --stc-ec-lv, at most round(FRAC x inputs) CA1 synapses per EC LV "
              "cell get L-LTP capture; the strongest live tags win. 0 (default) = off.")
     parser.add_argument(
+        "--lv-cov-eta", type=float, default=0.0, metavar="ETA",
+        help="WORKLOG 48: with --stc-ec-lv, replace STC on CA1 -> EC LV by a covariance rule "
+             "(dw = ETA * w_init * (x-<x>)(y-<y>) per SWR window, spike counts). 0 (default) = off.")
+    parser.add_argument(
         "--no-stc-hook", action="store_true",
         help="Keep the --stc epoch structure but skip the CA1->EC learning hook. "
              "With --no-mpfc-assoc this is the no-plasticity control.")
@@ -6400,7 +6431,11 @@ def run_consolidation(args, run):
                 w_max_rel     = args.stc_w_max_rel,
             )
 
-        if run.stc_lv_hook is not None:
+        if run.stc_lv_hook is not None and args.lv_cov_eta > 0:
+            for _ws, _we in ((run.swr_fwd[0], run.swr_fwd[1]), (run.swr_rev[0], run.swr_rev[1])):
+                run_cov_hook(run.stc_lv_hook, run.stc_lv_mod, epoch_t0 + _ws, epoch_t0 + _we,
+                             eta=args.lv_cov_eta, w_max_rel=args.stc_w_max_rel)
+        elif run.stc_lv_hook is not None:
             for _ws, _we in ((run.swr_fwd[0], run.swr_fwd[1]), (run.swr_rev[0], run.swr_rev[1])):
                 run_stc_hook(
                     run.stc_lv_hook, run.stc_lv_mod,
