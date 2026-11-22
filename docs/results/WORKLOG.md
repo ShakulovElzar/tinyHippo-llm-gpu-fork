@@ -1321,3 +1321,28 @@ Scorer: `out/em/score_chain.py` (not committed; reproduces §43 `g2L_s505`).
   --mf-k 46 --dg-ec-cluster-sigma 0.03 --ca3-drive-scale 0.1 --schaffer-w-scale 1.5 --ec-lv-ff-inhib 0
   --ec-lv-ie-shift -2 --cortex-group-frac 1.0 --w-eclii-lv 0 --w-ca1-lv 1.35 --w-mf-sup 3.75 --n-swr 24`.
   Code `b201d09`.
+
+## §45. Consolidation: sleep STC on CA1 → EC LV with random cortical wiring (pre-registered 2026-11-22, before the runs)
+
+Question: with cortical wiring that gives no identity, does sleep plasticity write a memory-specific
+trace into EC LV (and mPFC), above a no-plasticity twin?
+New opt-in flag `--stc-ec-lv` (code `f9b63a8`): the existing STC hook (same rule and parameters) also runs on
+CA1 → EC LV; weights exported as `stc_lv`. `--no-stc-hook` turns it off. S0 digest `8631eb29…` unchanged.
+Smoke test (2 blocks): 18,000 plastic synapses, weights change.
+Config `L` = `m1` (§44) with `--cortex-group-frac 0 --ca1-ec-group-frac 0` (random CA1 → EC, EC → mPFC)
++ `--stc-ec-lv --stc-ltp-tag-only --prp-threshold 6 --stc-capture-factor 2.0` (§22 settings).
+Twin `N` = `L` + `--no-stc-hook --no-mpfc-assoc`. 24 blocks, seeds 202, 303, 404, 505 (8 runs).
+Readout check before the runs: label-free activity measures (population r within vs between pattern,
+cross-validated preferred pattern) are too weak at EC LV rates (~0.7 spikes per cell per block): on
+`m1_s202` they give z +1.8 / xval +0.22 (p 0.12), where wiring-informed group z is +0.53 (p 0.0005).
+So the primary readouts use the learned weights. Scorer `out/em/score_cons.py` (written before scoring).
+Primary 1 (synaptic): for each EC LV cell, mean Δw of its CA1 inputs per CA1 pattern (CA1 home group
+mod 3); statistic = mean across cells of the variance across patterns; null = CA1 pattern labels
+shuffled across CA1 cells. Pass: p < 0.01 on ≥ 3/4 seeds.
+Primary 2 (functional): label each EC LV cell by its max-Δw pattern from `L`; group z of EC LV with
+those labels, second half (blocks 12–23), in `L` and in `N` (same seed, same cells). Pass: L − N > 0
+on ≥ 3/4 seeds and the paired mean t-interval (df 3) excludes 0.
+Secondary: mPFC LOO decoder L vs N; EC LII STC specificity.
+Validity (else that seed is void): CA3 ≤ 20 Hz, CA1 2–20 Hz, EC LV 1–20 Hz in SWR windows.
+Prediction: primary 1 passes (Hebbian learning on a pattern-structured CA1); primary 2 gain +0.05,
+interval includes 0: fail. mPFC L ≈ N.
