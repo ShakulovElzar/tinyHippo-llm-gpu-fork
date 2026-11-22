@@ -1209,3 +1209,18 @@ Question: is the s202 miss in §40 `g2` (EC LV +0.35 vs gate +0.40) noise or a r
 Gate: EC LV home z ≥ +0.40 with p < 0.01 on both seeds, and CA1 PYR keeps p < 0.01.
 Validity (else void): EC LV 1–20 Hz in SWR windows; CA1 2–20 Hz.
 Prediction: s202 +0.35 (CI includes +0.40), s303 +0.50. s202 misses again; the gate stays unmet.
+
+**Result (§41).** Home z [95% CI over 24 blocks] (p), first / second half.
+
+| seed | CA1 z | EC LV z | mPFC z | EC LV / CA1 | EC LV Hz | gate |
+|---|---|---|---|---|---|---|
+| 202 | +0.40 [+0.17, +0.64] (0.001) | **+0.30 [+0.08, +0.53]** (0.0005), +0.35 / +0.26 | +0.22 (0.0055) | 0.75 | 3.4 | fail |
+| 303 | +0.59 [+0.41, +0.77] (0.0005) | +0.43 [+0.21, +0.65] (0.0005), +0.52 / +0.35 | +0.27 (0.0105) | 0.73 | 3.4 | pass |
+
+- Gate fails: s202 +0.30 < +0.40 (all p < 0.01). Prediction held (s202 miss, s303 pass).
+- The s202 miss repeats at 12 and 24 blocks (+0.35, +0.30), so it is likely a seed effect, not
+  block noise. Both CIs still include +0.40; 2 seeds cannot separate the seeds statistically.
+- The hop ratio is stable: EC LV ≈ 0.74 × CA1 on both seeds. EC LV reaches +0.40 only if CA1 ≥ ~+0.54.
+  So the limit is now CA1 identity on the weak seed, which comes from CA3 coverage (§23 B), not CA1 → EC LV.
+- s303 decays in the second half (CA1 +0.71 → +0.47, EC LV +0.52 → +0.35, mPFC +0.43 → +0.11). s202 does not.
+- mPFC: +0.22 / +0.27, p 0.0055 / 0.0105. First mPFC signal with EC LII input cut, below gate size.
