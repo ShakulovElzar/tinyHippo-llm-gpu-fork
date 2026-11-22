@@ -4133,6 +4133,9 @@ def run_stc_hook(
     # WORKLOG 46: competition. True rescales each post cell's plastic inputs after
     # every update so their sum stays at its build-time value. Default off.
     norm_post        : bool  = False,
+    # WORKLOG 46: competition at capture. >0 caps L-LTP per post cell at
+    # round(frac * n_inputs) synapses; the strongest live tags win. 0 = off.
+    capture_topk     : float = 0.0,
 ) -> dict:
     """
     Run one STC update cycle after a completed SWR epoch.
@@ -4246,6 +4249,17 @@ def run_stc_hook(
     tag_alive   = stc.tag > 1e-4
     prp_above   = stc.prp_pool[stc.post_idx] >= PRP_threshold
     new_capture = tag_alive & prp_above & ~stc.ltp_done
+    if capture_topk > 0 and new_capture.any():
+        _n = len(stc.prp_pool)
+        _k = np.rint(capture_topk * np.bincount(stc.post_idx, minlength=_n)).astype(np.int64)
+        _left = _k - np.bincount(stc.post_idx[stc.ltp_done], minlength=_n)
+        _c = np.flatnonzero(new_capture)
+        _o = np.lexsort((-stc.tag[_c], stc.post_idx[_c]))      # by cell, strongest tag first
+        _c = _c[_o]; _pc = stc.post_idx[_c]
+        _first = np.searchsorted(_pc, _pc, side="left")
+        _rank = np.arange(len(_c)) - _first
+        new_capture = np.zeros_like(new_capture)
+        new_capture[_c[_rank < _left[_pc]]] = True
     if new_capture.any():
         # Permanent weight consolidation: boost by 30% capped at w_max
         stc.w[new_capture] = np.minimum(stc.w[new_capture] * capture_factor, _wmax)
@@ -5718,6 +5732,10 @@ Dentate gyrus (Phase 6.2):
         help="WORKLOG 46: with --stc-ec-lv, rescale each EC LV cell's CA1 inputs after every "
              "STC update so their sum stays at its initial value (competition). Default off.")
     parser.add_argument(
+        "--stc-lv-topk", type=float, default=0.0, metavar="FRAC",
+        help="WORKLOG 46: with --stc-ec-lv, at most round(FRAC x inputs) CA1 synapses per EC LV "
+             "cell get L-LTP capture; the strongest live tags win. 0 (default) = off.")
+    parser.add_argument(
         "--no-stc-hook", action="store_true",
         help="Keep the --stc epoch structure but skip the CA1->EC learning hook. "
              "With --no-mpfc-assoc this is the no-plasticity control.")
@@ -6394,6 +6412,7 @@ def run_consolidation(args, run):
                     capture_factor = args.stc_capture_factor,
                     w_max_rel     = args.stc_w_max_rel,
                     norm_post     = args.stc_lv_norm,
+                    capture_topk  = args.stc_lv_topk,
                 )
 
         if run.schaffer_hook is not None:
