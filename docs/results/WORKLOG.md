@@ -1346,3 +1346,26 @@ Secondary: mPFC LOO decoder L vs N; EC LII STC specificity.
 Validity (else that seed is void): CA3 ≤ 20 Hz, CA1 2–20 Hz, EC LV 1–20 Hz in SWR windows.
 Prediction: primary 1 passes (Hebbian learning on a pattern-structured CA1); primary 2 gain +0.05,
 interval includes 0: fail. mPFC L ≈ N.
+
+### §45 result (2026-11-22): FAIL on both primaries
+
+All 8 runs finished; all seeds valid (SWR windows: CA3 1.7–2.0 Hz, CA1 3.9–5.0 Hz, EC LV 3.1–6.0 Hz).
+
+| seed | spec z | spec p | LTP frac | mean Δw | EC LV dw-label z 2nd half L / N | L − N |
+|---|---|---|---|---|---|---|
+| 202 | +2.8 | 0.015 | 0.977 | +0.657 | −0.074 / −0.108 | +0.034 |
+| 303 | +1.3 | 0.083 | 0.995 | +0.670 | −0.228 / +0.057 | −0.285 |
+| 404 | +0.6 | 0.262 | 0.978 | +0.657 | +0.154 / −0.355 | +0.509 |
+| 505 | +0.7 | 0.181 | 0.979 | +0.659 | −0.040 / −0.060 | +0.020 |
+
+- Primary 1: p < 0.01 on 0/4 seeds. FAIL (prediction was pass: wrong).
+- Primary 2: L − N > 0 on 3/4 seeds, but mean +0.07, 95% t-interval [−0.45, +0.59]. FAIL (as predicted).
+- Secondary: mPFC LOO L − N = −0.13 (L 0.12–0.29, N 0.25–0.54; chance 0.33 for 3 patterns). No gain.
+  EC LII STC specificity was not computed.
+- Wiring-group z (score_chain): EC LV and mPFC ≈ 0 in L and N, as expected with random wiring.
+  Upstream identity is intact (CA3 +0.6–0.9, CA1 +0.3–0.6).
+- Cause (from the weights): 98–99% of CA1 → EC LV synapses get LTP, all by about the same +0.66.
+  The rule potentiates almost every active synapse. It has no competition, so it writes gain, not pattern.
+  EC LV rate rises 4 → 5.5 Hz in L. This is the same saturation as the §22 EC LII STC.
+- Next candidate (not run): add competition to the STC rule on this pathway (for example per-cell weight
+  normalization, or LTD for synapses that are active but untagged), then repeat §45 unchanged.
