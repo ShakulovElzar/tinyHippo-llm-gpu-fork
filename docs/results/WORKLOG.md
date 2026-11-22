@@ -1263,3 +1263,21 @@ Gate (fixed now, before 404 and 505):
 2. Mean EC LV z over 4 seeds ≥ +0.40, and the 95% t-interval over seeds (df 3) excludes 0.
 Validity (else that seed is void): EC LV 1–20 Hz in SWR windows; CA1 2–20 Hz.
 Prediction: 404 +0.30, 505 +0.40; mean +0.36. Part 1 passes, part 2 fails on size.
+
+**Result (§43).** Home z over 24 blocks (p). Mean over seeds with 95% t-interval (df 3).
+
+| seed | CA3 z | CA1 z (p) | EC LV z (p) | mPFC z (p) | EC LV / CA1 | part 1 |
+|---|---|---|---|---|---|---|
+| 202 | +0.58 | +0.40 (0.001) | +0.30 (0.0005) | +0.22 (0.0055) | 0.75 | yes |
+| 303 | +0.63 | +0.59 (0.0005) | +0.43 (0.0005) | +0.27 (0.0105) | 0.73 | yes |
+| 404 | +0.50 | +0.38 (0.0005) | +0.26 (0.0015) | +0.26 (0.003) | 0.67 | yes |
+| 505 | +0.34 | **+0.17 (0.055)** | +0.16 (0.027) | +0.13 (0.064) | 0.93 | no |
+| **mean** | +0.51 [+0.31, +0.72] | +0.39 [+0.11, +0.66] | **+0.29 [+0.10, +0.47]** | +0.22 [+0.12, +0.32] | 0.77 | 3/4 |
+
+- Part 1 passes (3/4 seeds). Part 2 fails: mean EC LV +0.29 < +0.40; the interval excludes 0.
+- Verdict: CA1 → EC LV carries identity reliably across seeds (mean +0.29, interval > 0), below the size gate.
+  Prediction: part 1 pass, part 2 fail held; mean lower than predicted (+0.29 vs +0.36), 505 weaker.
+- The loss is spread along the chain: CA3 +0.51 → CA1 +0.39 (0.75×) → EC LV +0.29 (0.75×) → mPFC +0.22.
+  No single hop is the bottleneck now; each costs about a quarter.
+- Seeds that are weak in CA3 (505) are weak downstream: the spread starts at CA3.
+- mPFC has a small, seed-reliable signal (+0.22 [+0.12, +0.32]), with p < 0.01 on 2/4 seeds.
