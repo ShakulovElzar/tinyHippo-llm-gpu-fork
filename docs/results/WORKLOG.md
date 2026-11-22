@@ -1237,3 +1237,19 @@ Gate: EC LV home z ≥ +0.40 with p < 0.01 on both seeds, and CA1 PYR keeps p < 
 Feedback is the cause if s202 CA3 returns to ≥ +0.75 and CA1 to ≥ +0.50. Caveat: any config change
 reshuffles 3-thread runs, so a change on one seed pair is weak evidence.
 Prediction: s202 CA3 +0.70, CA1 +0.50, EC LV +0.37 (miss); s303 about unchanged.
+
+**Result (§42).** `h1` = `g2L` + `--w-lv-ca3 0`. Home z [95% CI over 24 blocks] (p), first / second half.
+
+| seed | CA3 z | CA1 z | EC LV z | mPFC z | gate |
+|---|---|---|---|---|---|
+| 202 | +0.60 [+0.42, +0.77] | +0.35 (0.0035), +0.19 / +0.52 | **+0.29 [+0.06, +0.52] (0.0125)**, +0.07 / +0.51 | +0.19 (0.025) | fail |
+| 303 | +0.61 [+0.39, +0.82] | +0.56 (0.0005), +0.83 / +0.29 | +0.53 [+0.36, +0.71] (0.0005), +0.85 / +0.22 | +0.40 (0.0005) | pass |
+
+- Hypothesis rejected: without feedback, s202 CA3 stays +0.60 (test needed ≥ +0.75), CA1 +0.35. Prediction failed.
+- With the feedback cut, the CA3/CA1 network is close to `c3L` (EC LV changes cannot reach it). Yet s202
+  CA3 is +0.60 here and +0.80 in `c3L`. So the s202 CA3 value moves by ~0.2 between near-equivalent
+  configs: config/3-thread variability, not a mechanism found on this seed.
+- Within-run halves swing a lot (s202 EC LV +0.07 → +0.51; s303 +0.85 → +0.22). One seed pair with a
+  per-seed size gate is not a stable test at this noise level.
+- EC LV / CA1 ratio 0.82 / 0.95: the CA1 → EC LV hop stays efficient without the loop.
+- Next: treat seed as the unit. Run `g2L` on more seeds with a gate fixed before the runs.
