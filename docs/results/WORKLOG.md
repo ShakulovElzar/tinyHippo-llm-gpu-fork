@@ -1281,3 +1281,16 @@ Prediction: 404 +0.30, 505 +0.40; mean +0.36. Part 1 passes, part 2 fails on siz
   No single hop is the bottleneck now; each costs about a quarter.
 - Seeds that are weak in CA3 (505) are weak downstream: the spread starts at CA3.
 - mPFC has a small, seed-reliable signal (+0.22 [+0.12, +0.32]), with p < 0.01 on 2/4 seeds.
+
+## §44. Stronger mossy fibres onto CA3 SUP (pre-registered 2026-11-22, before the runs)
+
+Question: does a stronger mossy-fibre synapse raise CA3 identity on all seeds, and with it EC LV?
+§43: CA3 +0.51 mean, and each hop keeps ~0.75; EC LV needs CA3 ≈ +0.70. CA3 home groups compete
+(§23 B), and the mossy input is ~1 spike per window at K 46, w 2.5. A code note says w ≥ 6 over-drove
+CA3 at K 15; at K 46 total mossy drive is already 3×, so the step is 1.5×.
+New opt-in flag `--w-mf-sup` (default None = 2.5; CA3 DEEP unchanged). S0 digest `8631eb29…` unchanged.
+Arm `m1` = `g2L` + `--w-mf-sup 3.75`, 24 blocks, seeds 202, 303, 404, 505; paired with §43 `g2L`.
+Gate: as §43 (EC LV p < 0.01 with CA1 p < 0.01 on ≥ 3/4 seeds; mean EC LV ≥ +0.40, t-interval
+excludes 0). Mechanism check: CA3 gain (m1 − g2L) > 0 on ≥ 3/4 seeds, mean gain t-interval excludes 0.
+Validity (else that seed is void): CA3 SUP ≤ 20 Hz, CA1 2–20 Hz, EC LV 1–20 Hz in SWR windows.
+Prediction: CA3 mean +0.62 (gain +0.11), EC LV +0.33. Mechanism check passes; gate fails on size.

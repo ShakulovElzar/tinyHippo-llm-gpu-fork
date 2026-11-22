@@ -5343,6 +5343,9 @@ Dentate gyrus (Phase 6.2):
              "FRAC of each CA3 cell's mossy inputs come from granule cells of its "
              "sequence group's pattern. Weights/delays/w_cv unchanged.")
     parser.add_argument(
+        "--w-mf-sup", type=float, default=None, metavar="W",
+        help="WORKLOG 44: mossy-fibre DG GC -> CA3 SUP weight in mV (default: build_dg_module's 2.5).")
+    parser.add_argument(
         "--mf-k", type=int, default=0, metavar="K",
         help="Mossy-fibre in-degree onto CA3 SUP (DG GC -> CA3). 0 (default) keeps 15. "
              "Rat CA3 cells get ~46-50 mossy inputs (Amaral et al. 1990; Treves & Rolls "
@@ -6186,6 +6189,7 @@ def build_model(args, run):
             ec_field_centers    = ec_field_centers,
             dg_ec_cluster_sigma = args.dg_ec_cluster_sigma,
             mf_group_frac = args.mf_group_frac,
+            **({} if args.w_mf_sup is None else {"w_mf_ca3_sup": args.w_mf_sup}),
             n_seq_groups  = run.net["n_seq_groups"],
             n_patterns    = max(1, run.net["n_patterns"]),
             # follows --seed, so the granule-cell heterogeneity differs between seeds
