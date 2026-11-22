@@ -4130,6 +4130,9 @@ def run_stc_hook(
     # WORKLOG 24 (path 3): tag only LTP pairings. Default False keeps the old rule,
     # where an LTD pairing also tags and capture then raises the synapse x1.3.
     ltp_tag_only     : bool  = False,
+    # WORKLOG 46: competition. True rescales each post cell's plastic inputs after
+    # every update so their sum stays at its build-time value. Default off.
+    norm_post        : bool  = False,
 ) -> dict:
     """
     Run one STC update cycle after a completed SWR epoch.
@@ -4261,6 +4264,13 @@ def run_stc_hook(
         stc.struct_done |= new_struct
     n_struct_new   = int(new_struct.sum())
     n_struct_total = int(stc.struct_done.sum())
+
+    # ---- 5c. Per-cell normalisation (WORKLOG 46, opt-in) --------------------
+    if norm_post:   # stc.norm_sum0 = per-cell input sum at build time (set by caller)
+        _n = len(stc.prp_pool)
+        _sum = np.bincount(stc.post_idx, weights=stc.w, minlength=_n)
+        _f = np.divide(stc.norm_sum0, _sum, out=np.ones(_n), where=_sum > 0)
+        stc.w = (stc.w * _f[stc.post_idx]).astype(stc.w.dtype)
 
     # ---- 6. Write weights back to NEST ---------------------------------------
     sim.SetStatus(stc.conns, "weight", stc.w.tolist())
@@ -5704,6 +5714,10 @@ Dentate gyrus (Phase 6.2):
         help="WORKLOG 45: also run the STC hook (same rule and parameters) on CA1 -> EC LV. "
              "Needs --stc --ec-lv. Off by default; --no-stc-hook turns it off too.")
     parser.add_argument(
+        "--stc-lv-norm", action="store_true",
+        help="WORKLOG 46: with --stc-ec-lv, rescale each EC LV cell's CA1 inputs after every "
+             "STC update so their sum stays at its initial value (competition). Default off.")
+    parser.add_argument(
         "--no-stc-hook", action="store_true",
         help="Keep the --stc epoch structure but skip the CA1->EC learning hook. "
              "With --no-mpfc-assoc this is the no-plasticity control.")
@@ -6289,6 +6303,8 @@ def build_model(args, run):
             ca1_spike_rec=run.ec_module.ca1_spike_rec)
         run.stc_lv_hook = build_stc_hook(run.stc_lv_mod)
         run.stc_lv_w0 = run.stc_lv_hook.w.copy()
+        run.stc_lv_hook.norm_sum0 = np.bincount(
+            run.stc_lv_hook.post_idx, weights=run.stc_lv_w0, minlength=run.eclv_module.N)
 
     run.mpfc_assoc_hook = None
     run.mpfc_rec_hook   = None
@@ -6377,6 +6393,7 @@ def run_consolidation(args, run):
                     ltp_tag_only  = args.stc_ltp_tag_only,
                     capture_factor = args.stc_capture_factor,
                     w_max_rel     = args.stc_w_max_rel,
+                    norm_post     = args.stc_lv_norm,
                 )
 
         if run.schaffer_hook is not None:
