@@ -1253,3 +1253,13 @@ Prediction: s202 CA3 +0.70, CA1 +0.50, EC LV +0.37 (miss); s303 about unchanged.
   per-seed size gate is not a stable test at this noise level.
 - EC LV / CA1 ratio 0.82 / 0.95: the CA1 → EC LV hop stays efficient without the loop.
 - Next: treat seed as the unit. Run `g2L` on more seeds with a gate fixed before the runs.
+
+## §43. `g2L` on 4 seeds, seed as the unit (pre-registered 2026-11-22, before the runs)
+
+Config `g2L` (§41), 24 blocks, code `48e9ae5` (flags off = `7c5fdd7` behaviour). Seeds 202 and 303 are
+from §41 (EC LV +0.30 / +0.43, already known); new seeds 404 and 505.
+Gate (fixed now, before 404 and 505):
+1. EC LV home z p < 0.01 on ≥ 3 of 4 seeds, with CA1 PYR p < 0.01 on the same seeds.
+2. Mean EC LV z over 4 seeds ≥ +0.40, and the 95% t-interval over seeds (df 3) excludes 0.
+Validity (else that seed is void): EC LV 1–20 Hz in SWR windows; CA1 2–20 Hz.
+Prediction: 404 +0.30, 505 +0.40; mean +0.36. Part 1 passes, part 2 fails on size.
