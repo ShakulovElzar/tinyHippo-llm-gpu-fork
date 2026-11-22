@@ -1294,3 +1294,30 @@ Gate: as §43 (EC LV p < 0.01 with CA1 p < 0.01 on ≥ 3/4 seeds; mean EC LV ≥
 excludes 0). Mechanism check: CA3 gain (m1 − g2L) > 0 on ≥ 3/4 seeds, mean gain t-interval excludes 0.
 Validity (else that seed is void): CA3 SUP ≤ 20 Hz, CA1 2–20 Hz, EC LV 1–20 Hz in SWR windows.
 Prediction: CA3 mean +0.62 (gain +0.11), EC LV +0.33. Mechanism check passes; gate fails on size.
+
+**Result (§44).** Home z over 24 blocks (all p ≤ 0.002). Paired with §43 `g2L` on the same seed.
+Scorer: `out/em/score_chain.py` (not committed; reproduces §43 `g2L_s505`).
+
+| seed | CA3 z (gain) | CA1 z (gain) | EC LV z (gain) | mPFC z (gain) | CA3 Hz |
+|---|---|---|---|---|---|
+| 202 | +0.93 (+0.35) | +0.55 (+0.14) | +0.53 (+0.23) | +0.49 (+0.27) | 2.1 |
+| 303 | +0.88 (+0.24) | +0.57 (−0.02) | +0.51 (+0.08) | +0.52 (+0.25) | 1.7 |
+| 404 | +0.75 (+0.24) | +0.44 (+0.06) | +0.39 (+0.13) | +0.35 (+0.09) | 1.8 |
+| 505 | +0.80 (+0.46) | +0.48 (+0.31) | +0.41 (+0.26) | +0.40 (+0.22) | 2.0 |
+| **mean [95% t, df 3]** | **+0.84 [+0.71, +0.96]** | +0.51 [+0.41, +0.61] | **+0.46 [+0.35, +0.57]** | +0.44 [+0.32, +0.56] | |
+| mean gain | +0.33 [+0.16, +0.49] | +0.13 [−0.10, +0.35] | +0.17 [+0.04, +0.31] | +0.22 [+0.08, +0.36] | |
+
+- **Gate PASS.** Part 1: EC LV and CA1 p < 0.01 on 4/4 seeds. Part 2: mean EC LV +0.46 ≥ +0.40, interval > 0.
+  Mechanism check PASS: CA3 gain > 0 on 4/4, interval > 0. All rates valid (CA3 1.7–2.1, CA1 3.7–4.8,
+  EC LV 3.4–4.2 Hz). Prediction wrong in size: CA3 +0.84 vs +0.62 predicted, EC LV +0.46 vs +0.33.
+- First config where the memory reaches EC LV and mPFC (+0.44, p 0.0005 on 4/4) from CA1 alone, on 4 seeds.
+- The CA3 gain is clear; the CA1 gain is not (interval includes 0). The CA1 → EC LV hop now keeps ~0.9×.
+- Limits: 1% and 3 threads. Seeds 202 / 303 were used to choose the route (§35–§42); 404 / 505 are
+  less used, but fresh seeds are the clean replication. Identity here is carried by group wiring
+  (`--cortex-group-frac 1.0`), so this is a relay result, not consolidation. EC LII → EC LV is cut
+  (`--w-eclii-lv 0`), EC LV FF inhibition is off and EC LV I_e −2: a test config, not the default loop.
+  s303 still decays in the second half (EC LV +0.84 → +0.17).
+- Config `m1`: `em.base` + `--ec-ca3-k 12 --ec-ca3-w 1.0 --ec-ca3-group-frac 0.7 --mf-group-frac 1.0
+  --mf-k 46 --dg-ec-cluster-sigma 0.03 --ca3-drive-scale 0.1 --schaffer-w-scale 1.5 --ec-lv-ff-inhib 0
+  --ec-lv-ie-shift -2 --cortex-group-frac 1.0 --w-eclii-lv 0 --w-ca1-lv 1.35 --w-mf-sup 3.75 --n-swr 24`.
+  Code `b201d09`.
