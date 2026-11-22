@@ -1201,3 +1201,11 @@ modulation (10–20%) limits what EC LV can inherit. Both fail on size.
 - Prediction: z higher than +0.30 on s303; g2 rate lower than predicted (3.6 / 3.2 vs 4–8 Hz).
 - EC LV SWR rate ≈ outside rate in g2: identity comes from which cells fire, not from a SWR burst.
 - Next: g2 on more seeds or 24 blocks, to see whether s202 is noise or a weak seed (as s404 in §23 B).
+
+## §41. `g2` at 24 blocks (pre-registered 2026-11-22, before the runs)
+
+Question: is the s202 miss in §40 `g2` (EC LV +0.35 vs gate +0.40) noise or a real seed effect?
+`g2L` = `g2` + `--n-swr 24`, seeds 202 and 303, frozen code `7c5fdd7`. Scored with 95% CI over blocks.
+Gate: EC LV home z ≥ +0.40 with p < 0.01 on both seeds, and CA1 PYR keeps p < 0.01.
+Validity (else void): EC LV 1–20 Hz in SWR windows; CA1 2–20 Hz.
+Prediction: s202 +0.35 (CI includes +0.40), s303 +0.50. s202 misses again; the gate stays unmet.
