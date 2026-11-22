@@ -4680,7 +4680,7 @@ def save_replay_hdf5(net, sim_ms, scale_label, outpath, bin_ms=10.0,
                      eclv_module=None, mpfc_module=None,
                      homeo_stats=None, homeo_results=None, dg_module=None,
                      mpfc_assoc_hook=None, schaffer_hook=None,
-                     mpfc_rec_hook=None):
+                     mpfc_rec_hook=None, stc_lv_hook=None, stc_lv_w0=None):
     """
     Save all simulation results to an HDF5 file for offline plotting.
 
@@ -5061,6 +5061,14 @@ def save_replay_hdf5(net, sim_ms, scale_label, outpath, bin_ms=10.0,
             sg.attrs["mean_rate_ec_lii"] = float(len(t_ec) / (ec_module.N * sim_ms / 1000.0))
 
         # --- STC consolidation history (Phase 2) -----------------------------
+        if stc_lv_hook is not None:
+            lg = h5.create_group("stc_lv")
+            lg.create_dataset("w_init",   data=np.asarray(stc_lv_w0, dtype=np.float32), **compress)
+            lg.create_dataset("w_final",  data=stc_lv_hook.w.astype(np.float32), **compress)
+            lg.create_dataset("ltp_mask", data=stc_lv_hook.ltp_done.astype(np.uint8), **compress)
+            lg.create_dataset("pre_gid",  data=np.asarray(stc_lv_hook.pre_ids, dtype=np.int64), **compress)
+            lg.create_dataset("post_gid", data=np.asarray(stc_lv_hook.post_ids_g, dtype=np.int64), **compress)
+            lg.attrs["n_swr_events"] = stc_lv_hook.n_calls
         if stc_hook is not None and stc_hook.history:
             stc_grp = h5.create_group("stc")
             hist    = stc_hook.history
@@ -5692,6 +5700,10 @@ Dentate gyrus (Phase 6.2):
         help="Enable Phase 2 STC hook: Python STDP + tag/PRP between SWR epochs. "
              "Requires --ec-lii.")
     parser.add_argument(
+        "--stc-ec-lv", action="store_true",
+        help="WORKLOG 45: also run the STC hook (same rule and parameters) on CA1 -> EC LV. "
+             "Needs --stc --ec-lv. Off by default; --no-stc-hook turns it off too.")
+    parser.add_argument(
         "--no-stc-hook", action="store_true",
         help="Keep the --stc epoch structure but skip the CA1->EC learning hook. "
              "With --no-mpfc-assoc this is the no-plasticity control.")
@@ -6267,6 +6279,16 @@ def build_model(args, run):
     if args.stc and run.ec_module is not None and not args.no_stc_hook:
         print(">>> Initialising STC hook (Phase 2)...")
         run.stc_hook = build_stc_hook(run.ec_module)
+    run.stc_lv_hook = run.stc_lv_mod = None
+    if args.stc_ec_lv and run.stc_hook is not None and run.eclv_module is not None:
+        # same hook on CA1 -> EC LV: a view with the fields build/run_stc_hook read
+        print(">>> Initialising STC hook on CA1 -> EC LV (--stc-ec-lv)...")
+        run.stc_lv_mod = types.SimpleNamespace(
+            pre_nc=run.net["PYR"], population=run.eclv_module.population,
+            N=run.eclv_module.N, spike_rec=run.eclv_module.spike_rec,
+            ca1_spike_rec=run.ec_module.ca1_spike_rec)
+        run.stc_lv_hook = build_stc_hook(run.stc_lv_mod)
+        run.stc_lv_w0 = run.stc_lv_hook.w.copy()
 
     run.mpfc_assoc_hook = None
     run.mpfc_rec_hook   = None
@@ -6343,6 +6365,19 @@ def run_consolidation(args, run):
                 capture_factor = args.stc_capture_factor,
                 w_max_rel     = args.stc_w_max_rel,
             )
+
+        if run.stc_lv_hook is not None:
+            for _ws, _we in ((run.swr_fwd[0], run.swr_fwd[1]), (run.swr_rev[0], run.swr_rev[1])):
+                run_stc_hook(
+                    run.stc_lv_hook, run.stc_lv_mod,
+                    t_swr_start   = epoch_t0 + _ws,
+                    t_swr_end     = epoch_t0 + _we,
+                    current_t_ms  = epoch_t0 + run.SIM_MS,
+                    PRP_threshold = args.prp_threshold,
+                    ltp_tag_only  = args.stc_ltp_tag_only,
+                    capture_factor = args.stc_capture_factor,
+                    w_max_rel     = args.stc_w_max_rel,
+                )
 
         if run.schaffer_hook is not None:
             for _ws, _we in ((run.swr_fwd[0], run.swr_fwd[1]), (run.swr_rev[0], run.swr_rev[1])):
@@ -6637,7 +6672,8 @@ def export_results(args, run):
                      homeo_stats=run.homeo_stats, homeo_results=run.homeo_results,
                      dg_module=run.dg_module, mpfc_assoc_hook=run.mpfc_assoc_hook,
                      mpfc_rec_hook=run.mpfc_rec_hook,
-                     schaffer_hook=run.schaffer_hook)
+                     schaffer_hook=run.schaffer_hook,
+                     stc_lv_hook=run.stc_lv_hook, stc_lv_w0=getattr(run, "stc_lv_w0", None))
 
     if rank != 0:
         print(f">>> [rank {rank}] Done (non-root rank exiting).")
