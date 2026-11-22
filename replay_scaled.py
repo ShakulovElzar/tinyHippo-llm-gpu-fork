@@ -5249,6 +5249,9 @@ Dentate gyrus (Phase 6.2):
         "--w-ca1-lv", type=float, default=None, metavar="W",
         help="WORKLOG 40: CA1 -> EC LV weight in mV (default: build_ec_lv's 0.45).")
     parser.add_argument(
+        "--w-lv-ca3", type=float, default=None, metavar="W",
+        help="WORKLOG 42: EC LV -> CA3 SUP feedback weight in mV (default: build_ec_lv's 0.6).")
+    parser.add_argument(
         "--eclii-lv-k", type=int, default=None, metavar="K",
         help="WORKLOG 25: EC LII -> EC LV in-degree (default: build_ec_lv's 20).")
     parser.add_argument(
@@ -6226,6 +6229,7 @@ def build_model(args, run):
             lii_group_of = run.ec_module.group_of,
             ie_shift   = args.ec_lv_ie_shift,
             **({} if args.w_ca1_lv is None else {"w_ca1_lv": args.w_ca1_lv}),
+            **({} if args.w_lv_ca3 is None else {"w_lv_ca3": args.w_lv_ca3}),
             **({} if args.w_eclii_lv is None else {"w_eclii_lv": args.w_eclii_lv}),
             **({} if args.eclii_lv_k is None else {"K_eclii_lv": args.eclii_lv_k}),
         )

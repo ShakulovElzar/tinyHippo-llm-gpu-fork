@@ -1221,6 +1221,19 @@ Prediction: s202 +0.35 (CI includes +0.40), s303 +0.50. s202 misses again; the g
 - The s202 miss repeats at 12 and 24 blocks (+0.35, +0.30), so it is likely a seed effect, not
   block noise. Both CIs still include +0.40; 2 seeds cannot separate the seeds statistically.
 - The hop ratio is stable: EC LV ≈ 0.74 × CA1 on both seeds. EC LV reaches +0.40 only if CA1 ≥ ~+0.54.
-  So the limit is now CA1 identity on the weak seed, which comes from CA3 coverage (§23 B), not CA1 → EC LV.
+  So the limit is now CA1 identity on s202, not CA1 → EC LV. (Corrected in §42: s202 is not weak in `c3L`.)
 - s303 decays in the second half (CA1 +0.71 → +0.47, EC LV +0.52 → +0.35, mPFC +0.43 → +0.11). s202 does not.
 - mPFC: +0.22 / +0.27, p 0.0055 / 0.0105. First mPFC signal with EC LII input cut, below gate size.
+
+## §42. Does EC LV → CA3 feedback weaken s202? (pre-registered 2026-11-22, before the runs)
+
+Correction to §41: s202 is not a weak seed in `c3L` (CA3 +0.80, CA1 +0.55). Only in `g2L` does it drop
+(CA3 +0.58, CA1 +0.40), while s303 stays (CA3 +0.59 → +0.63, CA1 +0.62 → +0.59).
+Hypothesis: in `g2` EC LV is more active and fully group-wired, and its feedback to CA3 SUP
+(K 5, w 0.6, `--cortex-group-frac 1.0`) disturbs the CA3 code on s202.
+New opt-in flag `--w-lv-ca3` (default None = 0.6). S0 digest `8631eb29…` unchanged. Weight 0 keeps the wiring draw (same RNG).
+Arm `h1` = `g2L` + `--w-lv-ca3 0`, 24 blocks, seeds 202 and 303. Diagnostic: it cuts the loop back to CA3.
+Gate: EC LV home z ≥ +0.40 with p < 0.01 on both seeds, and CA1 PYR keeps p < 0.01.
+Feedback is the cause if s202 CA3 returns to ≥ +0.75 and CA1 to ≥ +0.50. Caveat: any config change
+reshuffles 3-thread runs, so a change on one seed pair is weak evidence.
+Prediction: s202 CA3 +0.70, CA1 +0.50, EC LV +0.37 (miss); s303 about unchanged.
