@@ -1516,3 +1516,15 @@ from the learned weights of one run, so no twin is needed. Primary 2 is not test
 Readout: `analysis/score_cons.py` synaptic specificity (1000 CA1-label shuffles), unchanged.
 Gate: p < 0.01 on ≥ 3/4 seeds. Validity as §45 (CA3 ≤ 20 Hz, CA1 2–20 Hz, EC LV 1–20 Hz; `analysis/score_chain.py`).
 Prediction: passes on 3/4 seeds.
+
+### §48r result (2026-11-23): incomplete, 2/4 seeds run
+
+Seeds 808 and 909 were stopped after 3 min (the disk was needed); their partial files were deleted.
+So the pre-registered gate (≥ 3/4 seeds) cannot be evaluated. Both finished seeds pass and are valid:
+
+| seed | spec z | spec p | rel. mean Δw | CA3 / CA1 / EC LV Hz |
+|---|---|---|---|---|
+| 606 | +3.6 | 0.001 | +0.49 × w_init | 2.2 / 4.9 / 5.6 |
+| 707 | +6.8 | 0.001 | +0.16 × w_init | 2.0 / 4.2 / 3.9 |
+
+Status: open. To finish: run seeds 808 and 909 with `out/em/b48r.sh` (only those two lines).
