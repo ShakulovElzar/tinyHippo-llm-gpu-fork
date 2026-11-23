@@ -25,7 +25,8 @@ Goal: a memory enters the hippocampus, is replayed during sleep (SWR), and is wr
 6. Consolidation with random wiring (§45–§48): sleep plasticity on CA1 → EC LV must create the identity.
    STC saturates (§45); a per-cell capture limit stops saturation but gives no specificity (§46);
    EC LV cells do have a wiring-driven pattern preference that STC ignores (§47); a covariance rule
-   is under test (§48).
+   writes pattern-specific weights on 3/4 seeds (§48), but its effect on EC LV activity is not
+   yet reliable and does not reach mPFC.
 
 ---
 
@@ -1475,3 +1476,31 @@ Primary 1 and 2, secondary and validity: exactly as §45 (`out/em/score_cons.py`
 Added secondary (from §47, `out/em/score_bias.py` logic): per cell, does the max-Δw pattern match the
 wiring preference? Report the agreement (chance 1/3) and mean Δw preferred minus other.
 Prediction (uncertain): agreement > 1/3 on 4/4 seeds; primary 1 passes on 2/4 (fail); primary 2 fails.
+
+### §48 result (2026-11-23): primary 1 PASS, primary 2 FAIL
+
+All 4 runs valid (SWR windows: CA3 1.7–2.0 Hz, CA1 3.6–5.4 Hz, EC LV 3.3–5.1 Hz). Twins `N45_s*`.
+Wall time 27 min per run; the machine slept overnight, so the batch took 9 h.
+
+| seed | spec z | spec p | rel Δw mean / SD | at cap | dw-label z 2nd half L / N | L − N | agree (1/3) |
+|---|---|---|---|---|---|---|---|
+| 202 | +7.6 | 0.001 | +0.16 / 0.21 | 4% | +0.373 / −0.008 | +0.381 | 0.30 |
+| 303 | +2.0 | 0.030 | +0.14 / 0.19 | 4% | −0.185 / +0.011 | −0.196 | 0.35 |
+| 404 | +5.2 | 0.001 | +0.18 / 0.17 | 4% | +0.068 / −0.059 | +0.127 | 0.38 |
+| 505 | +3.7 | 0.001 | +0.30 / 0.18 | 8% | +0.143 / −0.059 | +0.202 | 0.38 |
+
+(p 0.001 is the floor of the 1000-shuffle null.)
+- Primary 1 (synaptic specificity): p < 0.01 on 3/4 seeds. PASS. First rule in §45–§48 that writes
+  pattern-structured weights. Prediction (2/4) wrong, in the good direction.
+- Primary 2 (functional): L − N > 0 on 3/4 seeds, but mean +0.13, 95% t-interval [−0.26, +0.51]. FAIL
+  (as predicted). s202 is large (+0.38); s303 goes the other way.
+- Secondary: mPFC LOO L 0.17–0.42 vs N 0.25–0.54, no gain. Agreement of the max-Δw pattern with the
+  wiring preference: 0.30–0.38, above 1/3 on 3/4 seeds but small (prediction 4/4: wrong). Mean Δw of
+  preferred-pattern inputs minus others: −0.002 to +0.019. So the rule learns a pattern per cell, but
+  mostly not the one the wiring predicts. EC LII STC specificity not computed.
+- Wiring-group z (score_chain): EC LV and mPFC ≈ 0, as expected with random wiring.
+- Side effect: mean Δw is positive (+0.14 to +0.30 × w_init). Common SWR-strength fluctuations make
+  all pre and post counts covary, so part of the change is a non-specific gain.
+- Status: the synaptic trace exists; its effect on EC LV activity is not reliable at 4 seeds, and it
+  does not reach mPFC. Open levers (not tested): more seeds for primary 2; remove the common-mode
+  term (subtract the population-mean deviation); a learning rule on EC LV → mPFC.
