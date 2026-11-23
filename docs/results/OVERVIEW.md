@@ -113,16 +113,11 @@ But a planted-trace test showed that G2 is unreliable at 1% (§20, old §30 in �
 | Nous database → model | `llm/nous_export.py` (read-only) + `--ec-memories FILE`: each fact drives its own EC LII band | §21 |
 | read memories back from cortex (step 3c) | identity in EC LV / mPFC with `m1`; learned trace only at the weight level (§48) | §21, §44, §48 |
 
-## 7. Limits and open questions
+## 7. Limits
 
 - Everything is 1%. Cells per memory are few (EC LV 600 cells, 30 CA1 inputs each); 12% is not run.
 - 3-thread runs are not bit-identical; replication is across seeds (4 per condition).
 - Scorers `out/em/score_chain.py`, `score_cons.py`, `score_bias.py` are not committed yet.
-- Open:
-  1. More seeds for the §48 functional test, or first remove the common-mode term of the rule?
-  2. A learning rule on EC LV → mPFC, so the trace reaches mPFC?
-  3. Is a covariance rule an acceptable model of sleep consolidation, next to STC?
-  4. When to move to 12%?
 
 ## 8. How to check a change
 
