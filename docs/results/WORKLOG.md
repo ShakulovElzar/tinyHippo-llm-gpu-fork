@@ -1533,3 +1533,20 @@ copy of the repo on the main disk (same code `8b4d4d9`). All 4 seeds valid.
 - Gate (p < 0.01 on ≥ 3/4 seeds): PASS, 4/4. Prediction (3/4): wrong, in the good direction.
 - With §48: the covariance rule gives pattern-specific CA1 → EC LV weights on 7 of 8 seeds
   (only s303 in §48 misses, p 0.03). Primary 2 (effect on EC LV activity) was not tested here.
+
+## §49. Before 12%: functional effect on 8 seeds, and scaling 1% → 2% (pre-registered 2026-11-23, before the runs)
+
+**A. Does the learned CA1 → EC LV trace change EC LV activity? (§48 primary 2 with 8 seeds)**
+Pairs: `L48_s{202,303,404,505}` vs `N45_s*` (§48), plus `L48_s{606,707,808,909}` (§48r) vs new twins
+`N48_s*` = `hpc/flags/L48.flags` + `--no-stc-hook --no-mpfc-assoc` (with the hook off this equals `N45`).
+Readout: `analysis/score_cons.py`, EC LV dw-label z, second half (blocks 12–23), L − N per seed.
+Not blind: the 4 §48 pairs are known (mean +0.13, 3/4 positive).
+Gate: L − N > 0 on ≥ 6/8 seeds and the paired t-interval (df 7) excludes 0.
+Secondary: Wilcoxon signed-rank p (one-sided, L > N); mPFC LOO L − N.
+Prediction: 6/8 positive, interval includes 0: FAIL.
+
+**B. Scaling.** `L48` seed 202 at `--scale 1` and `--scale 2`, `--threads 3`, run side by side
+(`/usr/bin/time -l`: wall time and peak memory). From the two points, estimate 12% time and memory
+assuming linear growth in cell count (in-degrees are fixed). This is an estimate for the MN5 job
+limits (20 h wall, 50 cores), not a result. The 12% estimate is checked by the first MN5 run.
+Code: frozen worktree `8b4d4d9`.
