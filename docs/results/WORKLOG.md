@@ -7,6 +7,8 @@ Max's baseline (RESULTS_llm_gpu §1) used an Apple M3 with NEST 3.9.0.
 
 ## Goal and path (summary; details in the numbered sections)
 
+One-page overview with the configs that worked: [OVERVIEW.md](OVERVIEW.md).
+
 Goal: a memory enters the hippocampus, is replayed during sleep (SWR), and is written into cortex
 (EC LV, mPFC), so that it stays recallable without the hippocampus. Every claim needs a control
 (no-plasticity twin or shuffle), a gate fixed before the run, and ≥ 2 seeds. Everything here is at 1%.
