@@ -5,6 +5,28 @@ section 15). Machine: Apple M4, 10 cores, 16 GB RAM, macOS.
 NEST 3.10.0 (Homebrew), Python 3.15.2, `.venv` with `--system-site-packages`.
 Max's baseline (RESULTS_llm_gpu §1) used an Apple M3 with NEST 3.9.0.
 
+## Goal and path (summary; details in the numbered sections)
+
+Goal: a memory enters the hippocampus, is replayed during sleep (SWR), and is written into cortex
+(EC LV, mPFC), so that it stays recallable without the hippocampus. Every claim needs a control
+(no-plasticity twin or shuffle), a gate fixed before the run, and ≥ 2 seeds. Everything here is at 1%.
+
+1. Setup and reproducibility (§1–§6): local NEST 3.10 runs; a 1-thread digest (S0) proves that each
+   new opt-in flag leaves the default model unchanged.
+2. Does the pattern reach cortex? (§7–§14): EC LII had no inhibition, EC LV fired without input, CA3
+   sat in a constant-drive state. Fixes as opt-in flags; the pattern then reached mPFC on 3 seeds.
+3. LLM memory layer and capacity (§15–§16): text memories map to model patterns; capacity at 1% is ≈ 10.
+4. Is the cortical trace learned? (§17–§22): with group wiring, identity in cortex comes from the
+   wiring, not from learning. With random cortex wiring, sleep STC + mPFC learning gave a weak
+   post-lesion recall signal (G2) on 3/4 seeds, but the G2 probe proved unreliable.
+5. One memory, hop by hop (§23, §39–§44): with the database memory as the only input, identity passes
+   EC LII → DG → CA3 → CA1 → EC LV → mPFC. Final config `m1` passes on 4 seeds (EC LV +0.46,
+   mPFC +0.44), but through group wiring, so it is relay, not consolidation.
+6. Consolidation with random wiring (§45–§48): sleep plasticity on CA1 → EC LV must create the identity.
+   STC saturates (§45); a per-cell capture limit stops saturation but gives no specificity (§46);
+   EC LV cells do have a wiring-driven pattern preference that STC ignores (§47); a covariance rule
+   is under test (§48).
+
 ---
 
 ## 2026-11-10: setup, tests, viewer, first runs
@@ -773,7 +795,7 @@ pattern in this mode.
 - Capture-blocked arm: learning on, intact replay, 12 SWR, `--prp-threshold 999`.
 - 17 cells. Seeds: n = max(10, power-analysis n), same seed list in every cell, so runs pair
   by seed (same wiring).
-- Changes from the original request, decided 2026-11-14: SWR levels {0, 2, 7, 14} replaced
+- Changes from the first draft of this design, decided 2026-11-14: SWR levels {0, 2, 7, 14} replaced
   (0 SWR defines no mPFC assemblies to cue; 2 SWR never replays pattern 2; 7 gives 3/2/2).
   Lesion delay and criterion (d) dropped: the model has no time-dependent process between
   learning and lesion, so a delay can only mean more SWRs.
