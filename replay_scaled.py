@@ -4086,8 +4086,33 @@ def build_stc_hook(ec_module, w_init_override=None) -> STCHook:
     )
 
 
+def _cov_counts(rec, gids, t0, t1):
+    """Spike count per cell of sorted gids in [t0, t1)."""
+    import simbackend as sim
+    ev = sim.GetStatus(rec, "events")[0]
+    t = np.asarray(ev["times"]); sd = np.asarray(ev["senders"], dtype=np.int64)
+    sd = sd[(t >= t0) & (t < t1)]
+    i = np.searchsorted(gids, sd); ok = (i < len(gids)) & (gids[np.minimum(i, len(gids) - 1)] == sd)
+    return np.bincount(i[ok], minlength=len(gids)).astype(np.float64)
+
+
+def _cov_step(h, x, y, pre_i, post_i, w_init, eta, alpha, w_min_rel, w_max_rel, center):
+    """One covariance update on h.w; running means h.cov_mx / h.cov_my.
+    center (WORKLOG 50): subtract the population mean deviation of x and of y first, so a
+    window in which all cells fire more (common mode) gives no net weight change."""
+    if getattr(h, "cov_mx", None) is None:
+        h.cov_mx, h.cov_my = x.copy(), y.copy()
+    ex = x - h.cov_mx; ey = y - h.cov_my
+    if center:
+        ex = ex - ex.mean(); ey = ey - ey.mean()
+    h.w = np.clip(h.w + eta * w_init * ex[pre_i] * ey[post_i],
+                  w_min_rel * w_init, w_max_rel * w_init).astype(h.w.dtype)
+    h.cov_mx += alpha * (x - h.cov_mx); h.cov_my += alpha * (y - h.cov_my)
+
+
 def run_cov_hook(stc: STCHook, mod, t0: float, t1: float, eta: float,
-                 alpha: float = 0.1, w_min_rel: float = 0.1, w_max_rel: float = 1.5) -> None:
+                 alpha: float = 0.1, w_min_rel: float = 0.1, w_max_rel: float = 1.5,
+                 center: bool = False) -> None:
     """WORKLOG 48 (opt-in): covariance rule on one SWR window, in place of STC.
     x = CA1 spike count per cell, y = post spike count per cell in [t0, t1].
     dw = eta * w_init * (x - <x>)(y - <y>); <.> = running means over SWR windows
@@ -4096,21 +4121,35 @@ def run_cov_hook(stc: STCHook, mod, t0: float, t1: float, eta: float,
     if not hasattr(stc, "cov_pre_u"):
         stc.cov_pre_u, stc.cov_pre_i = np.unique(stc.pre_ids, return_inverse=True)
         stc.cov_mx = stc.cov_my = None
-    def _cnt(rec, gids):
-        ev = sim.GetStatus(rec, "events")[0]
-        t = np.asarray(ev["times"]); sd = np.asarray(ev["senders"], dtype=np.int64)
-        sd = sd[(t >= t0) & (t < t1)]
-        i = np.searchsorted(gids, sd); ok = (i < len(gids)) & (gids[np.minimum(i, len(gids) - 1)] == sd)
-        return np.bincount(i[ok], minlength=len(gids)).astype(np.float64)
-    x = _cnt(mod.ca1_spike_rec, stc.cov_pre_u)
-    _post_g = np.sort(stc.ec_gids); y = _cnt(mod.spike_rec, _post_g)[np.searchsorted(_post_g, stc.ec_gids)]
-    if stc.cov_mx is None:
-        stc.cov_mx, stc.cov_my = x.copy(), y.copy()
-    dx = (x - stc.cov_mx)[stc.cov_pre_i]; dy = (y - stc.cov_my)[stc.post_idx]
-    stc.w = np.clip(stc.w + eta * stc.w_init * dx * dy, w_min_rel * stc.w_init, w_max_rel * stc.w_init).astype(stc.w.dtype)
-    stc.cov_mx += alpha * (x - stc.cov_mx); stc.cov_my += alpha * (y - stc.cov_my)
+    x = _cov_counts(mod.ca1_spike_rec, stc.cov_pre_u, t0, t1)
+    _post_g = np.sort(stc.ec_gids); y = _cov_counts(mod.spike_rec, _post_g, t0, t1)[np.searchsorted(_post_g, stc.ec_gids)]
+    _cov_step(stc, x, y, stc.cov_pre_i, stc.post_idx, stc.w_init, eta, alpha, w_min_rel, w_max_rel, center)
     stc.n_calls += 1
     sim.SetStatus(stc.conns, "weight", stc.w.tolist())
+
+
+def run_mpfc_cov_hook(hook, eclv_module, mpfc_module, t0: float, t1: float, eta: float,
+                      alpha: float = 0.1, w_min_rel: float = 0.1, w_max_rel: float = 1.5,
+                      center: bool = False) -> None:
+    """WORKLOG 51 (opt-in): the WORKLOG 48 covariance rule on EC LV -> mPFC, in place of the
+    replay-gated Hebbian rule. x = EC LV, y = mPFC spike counts per cell in one SWR window."""
+    import simbackend as sim
+    if not hasattr(hook, "cov_lv_g"):
+        hook.cov_lv_p = np.asarray(eclv_module.population.tolist(), dtype=np.int64)
+        hook.cov_pf_p = np.asarray(mpfc_module.population.tolist(), dtype=np.int64)
+        hook.cov_lv_g = np.sort(hook.cov_lv_p); hook.cov_pf_g = np.sort(hook.cov_pf_p)
+        hook.cov_mx = hook.cov_my = None
+        hook.w = np.asarray(hook.w, dtype=np.float64)
+        hook.w_init_arr = hook.w.copy()
+    x = _cov_counts(eclv_module.spike_rec, hook.cov_lv_g, t0, t1)[np.searchsorted(hook.cov_lv_g, hook.cov_lv_p)]
+    y = _cov_counts(mpfc_module.spike_rec, hook.cov_pf_g, t0, t1)[np.searchsorted(hook.cov_pf_g, hook.cov_pf_p)]
+    _cov_step(hook, x, y, hook.pre_idx, hook.post_idx, hook.w_init_arr, eta, alpha, w_min_rel, w_max_rel, center)
+    hook.n_calls += 1
+    sim.SetStatus(hook.conns, "weight", hook.w)
+    w_cv = float(hook.w.std() / max(hook.w.mean(), 1e-9))
+    hook.history.append(dict(t_swr_start=float(t0), n_coactive=0, n_hetero=0,
+                             w_mean=float(hook.w.mean()), w_max_seen=float(hook.w.max()), w_cv=w_cv,
+                             n_associated=0, frac_associated=0.0))
 
 
 def run_stc_hook(
@@ -5006,6 +5045,10 @@ def save_replay_hdf5(net, sim_ms, scale_label, outpath, bin_ms=10.0,
                 ag.create_dataset(key, data=np.array([r[key] for r in hist], dtype=dt))
             ag.create_dataset("w_final", data=mpfc_assoc_hook.w.astype(np.float32),
                               **compress)
+            if hasattr(mpfc_assoc_hook, "w_init_arr"):   # WORKLOG 51 covariance rule
+                ag.create_dataset("w_init_arr", data=mpfc_assoc_hook.w_init_arr.astype(np.float32), **compress)
+                ag.create_dataset("pre_gid", data=mpfc_assoc_hook.cov_lv_p[mpfc_assoc_hook.pre_idx], **compress)
+                ag.create_dataset("post_gid", data=mpfc_assoc_hook.cov_pf_p[mpfc_assoc_hook.post_idx], **compress)
 
         # --- recurrent mPFC->mPFC (what a lesioned cortex must recall ON) ----
         # Kept separate from mpfc_assoc: that group is the FEEDFORWARD
@@ -5767,6 +5810,17 @@ Dentate gyrus (Phase 6.2):
         help="WORKLOG 48: with --stc-ec-lv, replace STC on CA1 -> EC LV by a covariance rule "
              "(dw = ETA * w_init * (x-<x>)(y-<y>) per SWR window, spike counts). 0 (default) = off.")
     parser.add_argument(
+        "--lv-cov-center", action="store_true",
+        help="WORKLOG 50: with --lv-cov-eta, subtract the population mean deviation of the CA1 "
+             "and EC LV counts before the product (no common-mode growth). Default off.")
+    parser.add_argument(
+        "--mpfc-cov-eta", type=float, default=0.0, metavar="ETA",
+        help="WORKLOG 51: replace the EC LV -> mPFC Hebbian hook by the covariance rule of "
+             "--lv-cov-eta (needs the mPFC assoc hook on). 0 (default) = off.")
+    parser.add_argument(
+        "--mpfc-cov-center", action="store_true",
+        help="WORKLOG 51: --lv-cov-center for the EC LV -> mPFC covariance rule. Default off.")
+    parser.add_argument(
         "--no-stc-hook", action="store_true",
         help="Keep the --stc epoch structure but skip the CA1->EC learning hook. "
              "With --no-mpfc-assoc this is the no-plasticity control.")
@@ -6434,7 +6488,8 @@ def run_consolidation(args, run):
         if run.stc_lv_hook is not None and args.lv_cov_eta > 0:
             for _ws, _we in ((run.swr_fwd[0], run.swr_fwd[1]), (run.swr_rev[0], run.swr_rev[1])):
                 run_cov_hook(run.stc_lv_hook, run.stc_lv_mod, epoch_t0 + _ws, epoch_t0 + _we,
-                             eta=args.lv_cov_eta, w_max_rel=args.stc_w_max_rel)
+                             eta=args.lv_cov_eta, w_max_rel=args.stc_w_max_rel,
+                             center=args.lv_cov_center)
         elif run.stc_lv_hook is not None:
             for _ws, _we in ((run.swr_fwd[0], run.swr_fwd[1]), (run.swr_rev[0], run.swr_rev[1])):
                 run_stc_hook(
@@ -6466,7 +6521,12 @@ def run_consolidation(args, run):
                                     keep_strong=args.hebb_keep_strong)
 
         # Cortical association build-up: same two SWR windows, EC LV -> mPFC
-        if run.mpfc_assoc_hook is not None:
+        if run.mpfc_assoc_hook is not None and args.mpfc_cov_eta > 0:
+            for _ws, _we in ((run.swr_fwd[0], run.swr_fwd[1]), (run.swr_rev[0], run.swr_rev[1])):
+                run_mpfc_cov_hook(run.mpfc_assoc_hook, run.eclv_module, run.mpfc_module,
+                                  epoch_t0 + _ws, epoch_t0 + _we, eta=args.mpfc_cov_eta,
+                                  center=args.mpfc_cov_center)
+        elif run.mpfc_assoc_hook is not None:
             for _ws, _we in ((run.swr_fwd[0], run.swr_fwd[1]), (run.swr_rev[0], run.swr_rev[1])):
                 run_mpfc_assoc_hook(
                     run.mpfc_assoc_hook, run.eclv_module, run.mpfc_module,

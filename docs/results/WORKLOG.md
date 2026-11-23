@@ -1585,3 +1585,39 @@ Code: frozen worktree `8b4d4d9`.
   single-thread Python hooks. Even with no speed-up over 3 threads and slower cores (0.7×),
   the estimate is about 6 h, inside the 20 h limit. Memory per node on MN5 GPP is not checked here.
 - The 2% run has 2.6× the HDF5 size; at 12% about 90 MB per run.
+
+## §50. Covariance rule without common mode (pre-registered 2026-11-23, before the runs)
+
+**Question.** In §48 every CA1 → EC LV weight grows (mean Δw +0.14 to +0.49 × w₀), because all
+cells fire more in a strong SWR window. Does removing this common mode make the trace change
+EC LV activity (§49 primary 2 FAIL, +0.11 [−0.04, +0.25])?
+
+**Rule.** `--lv-cov-center`: before the product, subtract the population mean of the deviations,
+x' = (x−⟨x⟩) − mean over CA1 cells, y' = (y−⟨y⟩) − mean over EC LV cells. Rest as §48 (η 0.1, α 0.1, clip [0.1, 1.5] × w₀).
+**Runs.** `C50_s{202..909}` = `hpc/flags/L48.flags` + `--lv-cov-center`, 8 seeds. Twins: `N45_s{202..505}`, `N48_s{606..909}` (§49).
+**Readout.** `analysis/score_cons.py C50 N`.
+- Primary 1 (specific weights): spec p < 0.01 on ≥ 6/8 seeds.
+- Primary 2 (functional): EC LV dw-label z, second half, C − N > 0 on ≥ 6/8 and the paired t-interval (df 7) excludes 0.
+- Secondary: mean Δw near 0; C − L48 on the same seed (paired, 8 seeds); mPFC LOO.
+**Prediction.** Primary 1 PASS. Primary 2 FAIL: the common mode raises all cells, and a pattern
+label z does not depend on a uniform gain.
+
+## §51. Covariance rule on EC LV → mPFC (pre-registered 2026-11-23, before the runs)
+
+**Question.** The trace stops at EC LV (§48–§49). With the same rule on EC LV → mPFC during
+sleep, do pattern-specific weights form in mPFC, and does mPFC activity follow them?
+
+**Rule.** `--mpfc-cov-eta 0.1`: the §48 rule replaces the replay-gated Hebbian hook on EC LV → mPFC
+(x = EC LV, y = mPFC spike counts per SWR window; w₀ per synapse; clip [0.1, 1.5] × w₀).
+**Runs.** `M51_s{202..909}` = `hpc/flags/L48.flags` + `--mpfc-cov-eta 0.1 --mpfc-cov-center` (CA1 → EC LV rule as §48, not centred), 8 seeds. Twins as §50.
+Why centred: a 2-epoch smoke run (seed 202) without centring gave mean Δw/w₀ +0.087 with almost every synapse up (mean |Δw| 0.54 vs mean Δw 0.52, w₀ 6); at that rate the weights reach the 1.5 × w₀ cap in about 12 epochs, as STC did in §45.
+**Readout.** `analysis/score_mpfc.py M51 N` (new).
+- Primary 1: EC LV cells labelled by preferred pattern (activity in M51, all blocks). Spec of
+  mPFC inputs by label, null = labels shuffled (1000). Pass: p < 0.01 on ≥ 6/8 seeds.
+- Primary 2: mPFC dw-label z, second half, M − N > 0 on ≥ 6/8 and t-interval excludes 0.
+- Secondary: mPFC LOO M − N; `score_cons.py` on M51 (the EC LV result must stay as in §48).
+**Limit.** EC LV cells have a pattern preference from random wiring (§47). Primary 1 can pass
+from that alone; it shows that the rule follows EC LV activity, not that CA1 learning caused it.
+**Prediction.** Primary 1 PASS. Primary 2 FAIL at 1%.
+
+Code for §50–§51: new commit; S0 digest `8631eb29…` unchanged (`out/em/s0_after13.h5`); run from the frozen worktree.
