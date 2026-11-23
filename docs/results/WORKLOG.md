@@ -1321,7 +1321,7 @@ Validity (else that seed is void): CA3 SUP ≤ 20 Hz, CA1 2–20 Hz, EC LV 1–2
 Prediction: CA3 mean +0.62 (gain +0.11), EC LV +0.33. Mechanism check passes; gate fails on size.
 
 **Result (§44).** Home z over 24 blocks (all p ≤ 0.002). Paired with §43 `g2L` on the same seed.
-Scorer: `out/em/score_chain.py` (not committed; reproduces §43 `g2L_s505`).
+Scorer: `analysis/score_chain.py` (reproduces §43 `g2L_s505`).
 
 | seed | CA3 z (gain) | CA1 z (gain) | EC LV z (gain) | mPFC z (gain) | CA3 Hz |
 |---|---|---|---|---|---|
@@ -1360,7 +1360,7 @@ Twin `N` = `L` + `--no-stc-hook --no-mpfc-assoc`. 24 blocks, seeds 202, 303, 404
 Readout check before the runs: label-free activity measures (population r within vs between pattern,
 cross-validated preferred pattern) are too weak at EC LV rates (~0.7 spikes per cell per block): on
 `m1_s202` they give z +1.8 / xval +0.22 (p 0.12), where wiring-informed group z is +0.53 (p 0.0005).
-So the primary readouts use the learned weights. Scorer `out/em/score_cons.py` (written before scoring).
+So the primary readouts use the learned weights. Scorer `analysis/score_cons.py` (written before scoring).
 Primary 1 (synaptic): for each EC LV cell, mean Δw of its CA1 inputs per CA1 pattern (CA1 home group
 mod 3); statistic = mean across cells of the variance across patterns; null = CA1 pattern labels
 shuffled across CA1 cells. Pass: p < 0.01 on ≥ 3/4 seeds.
@@ -1406,7 +1406,7 @@ S0 digest `8631eb29…` unchanged. Smoke test (6 blocks, FRAC 0.2): LTP 15%, per
 Config `L46` = `L45` + `--stc-lv-topk 0.2`. Seeds 202, 303, 404, 505.
 Twin: the §45 twins `N45_s*` are reused. They are the same config: with `--no-stc-hook` the new flag
 does nothing.
-Readouts, gates, validity: exactly as §45 (scorer `out/em/score_cons.py`, unchanged).
+Readouts, gates, validity: exactly as §45 (scorer `analysis/score_cons.py`, unchanged).
 Primary 1: specificity p < 0.01 on ≥ 3/4 seeds. Primary 2: dw-label EC LV z, second half, L − N > 0
 on ≥ 3/4 seeds and paired t-interval (df 3) excludes 0.
 Prediction (uncertain): primary 1 passes on 2/4 seeds (fail); primary 2 fails.
@@ -1441,7 +1441,7 @@ All 4 runs valid (SWR windows: CA3 1.7–2.0 Hz, CA1 3.7–4.9 Hz, EC LV 3.6–4
 Not pre-registered; analysis of existing files only (`N45_s*`, wiring from `L45_s*`, same seed and build).
 1. Label-free readouts (`out/em/score_sel.py`) have no power here. Positive control fails: CA1, which has
    group z +0.3–0.6, gives xval p < 0.01 on 1/4 seeds. EC LV: 0/4. This says nothing about EC LV.
-2. Wiring-based labels (`out/em/score_bias.py`): each EC LV cell has 30 random CA1 inputs; its top
+2. Wiring-based labels (`analysis/score_bias.py`): each EC LV cell has 30 random CA1 inputs; its top
    pattern gets 0.44 of the input weight (1/3 if even). EC LV group z with these labels, second half,
    label-shuffle null:
 
@@ -1474,8 +1474,8 @@ S0 digest `8631eb29…` unchanged. Smoke test (6 blocks, ETA 0.1): 92% of synaps
 relative Δw mean +0.09, SD 0.13, 0.5% at the cap.
 Config `L48` = `L45` + `--lv-cov-eta 0.1` (ETA fixed here, no tuning). Seeds 202, 303, 404, 505.
 Twins `N45_s*` reused (with `--no-stc-hook` the hook is not built, so the flag does nothing).
-Primary 1 and 2, secondary and validity: exactly as §45 (`out/em/score_cons.py`).
-Added secondary (from §47, `out/em/score_bias.py` logic): per cell, does the max-Δw pattern match the
+Primary 1 and 2, secondary and validity: exactly as §45 (`analysis/score_cons.py`).
+Added secondary (from §47, `analysis/score_bias.py` logic): per cell, does the max-Δw pattern match the
 wiring preference? Report the agreement (chance 1/3) and mean Δw preferred minus other.
 Prediction (uncertain): agreement > 1/3 on 4/4 seeds; primary 1 passes on 2/4 (fail); primary 2 fails.
 

@@ -117,7 +117,7 @@ But a planted-trace test showed that G2 is unreliable at 1% (§20, old §30 in �
 
 - Everything is 1%. Cells per memory are few (EC LV 600 cells, 30 CA1 inputs each); 12% is not run.
 - 3-thread runs are not bit-identical; replication is across seeds (4 per condition).
-- Scorers `out/em/score_chain.py`, `score_cons.py`, `score_bias.py` are not committed yet.
+- Scorers: `analysis/score_chain.py` (chain z and rates), `analysis/score_cons.py` (§45–§48 gates), `analysis/score_bias.py` (§47). Run from the repo root on the run HDF5 files; the run files themselves are not committed.
 
 ## 8. How to check a change
 
