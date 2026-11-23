@@ -210,7 +210,7 @@ def _round_to_multiple(n: float, m: int) -> int:
     return max(m, int(round(n / m)) * m)
 
 
-def build_scale_config(pct: int, n_groups_override: int | None = None) -> dict:
+def build_scale_config(pct: int, n_groups_override: "int | None" = None) -> dict:
     """
     Build a scale configuration for any integer percentage 1–100.
 
