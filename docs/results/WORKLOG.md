@@ -1506,3 +1506,13 @@ Wall time 27 min per run; the machine slept overnight, so the batch took 9 h.
 - Status: the synaptic trace exists; its effect on EC LV activity is not reliable at 4 seeds, and it
   does not reach mPFC. Open levers (not tested): more seeds for primary 2; remove the common-mode
   term (subtract the population-mean deviation); a learning rule on EC LV → mPFC.
+
+## §48r. Replication of §48 primary 1 on fresh seeds (pre-registered 2026-11-23, before the runs)
+
+Question: does the covariance rule write pattern-specific CA1 → EC LV weights on seeds never used
+in this project? Config `L48` exactly (`hpc/flags/L48.flags`, code `2588ab8` behaviour; frozen
+worktree at the current commit). Seeds 606, 707, 808, 909. Learning arm only: primary 1 is computed
+from the learned weights of one run, so no twin is needed. Primary 2 is not tested here.
+Readout: `analysis/score_cons.py` synaptic specificity (1000 CA1-label shuffles), unchanged.
+Gate: p < 0.01 on ≥ 3/4 seeds. Validity as §45 (CA3 ≤ 20 Hz, CA1 2–20 Hz, EC LV 1–20 Hz; `analysis/score_chain.py`).
+Prediction: passes on 3/4 seeds.
