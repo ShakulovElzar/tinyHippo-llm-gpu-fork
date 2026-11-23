@@ -8,7 +8,8 @@ Branch `llm-work` of `ShakulovElzar/tinyHippo-llm-gpu-fork`. Full detail and eve
 - A memory from the Nous database now travels the full loop EC LII → DG → CA3 → CA1 → EC LV → mPFC
   on 4/4 seeds (config `m1`, §44). In the starting model, identity was lost before cortex (§7).
 - With group wiring this is relay, not consolidation. With random cortical wiring, a covariance
-  rule during sleep writes pattern-specific CA1 → EC LV weights on 3/4 seeds (§48). The effect of
+  rule during sleep writes pattern-specific CA1 → EC LV weights on 3/4 seeds (§48), and on 4/4 fresh
+  seeds in a pre-registered replication (§48r). The effect of
   those weights on EC LV activity is not yet reliable, and it does not reach mPFC.
 - Every new mechanism is an opt-in flag. The default model is unchanged: the 1-thread S0 digest
   `8631eb29…` is the same after every flag.
@@ -25,7 +26,7 @@ Branch `llm-work` of `ShakulovElzar/tinyHippo-llm-gpu-fork`. Full detail and eve
 | 11-18 | Nous database memories as EC LII spike input (step 3a–3c) | input works; alone it does not reach CA3 | §21 |
 | 11-18 to 11-20 | sleep learning with random cortex wiring, post-lesion recall | weak G2 effect 3/4 seeds; probe unreliable | §22 |
 | 11-20 to 11-22 | the database memory, hop by hop, anatomical routing | full loop passes on 4/4 seeds (`m1`) | §23, §39–§44 |
-| 11-22 to 11-23 | consolidation: plasticity rules on CA1 → EC LV with random wiring | covariance rule: specific weights 3/4 seeds | §45–§48 |
+| 11-22 to 11-23 | consolidation: plasticity rules on CA1 → EC LV with random wiring | covariance rule: specific weights 3/4 seeds, replicated 4/4 on fresh seeds | §45–§48r |
 
 ## 3. Before and after
 
@@ -80,7 +81,7 @@ Control: the same with `--no-stc-hook --no-mpfc-assoc` (no plasticity).
 |---|---|---|---|
 | STC tag-and-capture | 0/4 (98% of synapses saturate at the cap) | +0.07 [−0.45, +0.59] | §45 |
 | STC + per-cell capture limit 20% | 0/4 | −0.10 [−0.31, +0.11] | §46 |
-| covariance, Δw = η·w₀·(x−⟨x⟩)(y−⟨y⟩), η 0.1 | **3/4** (z +7.6 / +2.0 / +5.2 / +3.7) | +0.13 [−0.26, +0.51] | §48 |
+| covariance, Δw = η·w₀·(x−⟨x⟩)(y−⟨y⟩), η 0.1 | **3/4** (z +7.6 / +2.0 / +5.2 / +3.7); fresh seeds **4/4** (z +3.6 / +6.8 / +3.4 / +2.8) | +0.13 [−0.26, +0.51] | §48, §48r |
 
 Recommendation: use the covariance rule (`--lv-cov-eta 0.1`) for further consolidation work.
 STC as built is a correlation rule: most CA1 cells fire in every SWR, so it potentiates almost

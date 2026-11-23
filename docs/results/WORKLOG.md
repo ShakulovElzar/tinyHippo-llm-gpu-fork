@@ -1517,14 +1517,19 @@ Readout: `analysis/score_cons.py` synaptic specificity (1000 CA1-label shuffles)
 Gate: p < 0.01 on ≥ 3/4 seeds. Validity as §45 (CA3 ≤ 20 Hz, CA1 2–20 Hz, EC LV 1–20 Hz; `analysis/score_chain.py`).
 Prediction: passes on 3/4 seeds.
 
-### §48r result (2026-11-23): incomplete, 2/4 seeds run
+### §48r result (2026-11-23): PASS, 4/4 fresh seeds
 
-Seeds 808 and 909 were stopped after 3 min (the disk was needed); their partial files were deleted.
-So the pre-registered gate (≥ 3/4 seeds) cannot be evaluated. Both finished seeds pass and are valid:
+Seeds 808 and 909 were first stopped after 3 min (the disk was needed), then rerun in full from a
+copy of the repo on the main disk (same code `8b4d4d9`). All 4 seeds valid.
 
-| seed | spec z | spec p | rel. mean Δw | CA3 / CA1 / EC LV Hz |
+| seed | spec z | spec p | mean Δw / w_init | CA3 / CA1 / EC LV Hz |
 |---|---|---|---|---|
-| 606 | +3.6 | 0.001 | +0.49 × w_init | 2.2 / 4.9 / 5.6 |
-| 707 | +6.8 | 0.001 | +0.16 × w_init | 2.0 / 4.2 / 3.9 |
+| 606 | +3.6 | 0.001 | +0.36 | 2.2 / 4.9 / 5.6 |
+| 707 | +6.8 | 0.001 | +0.12 | 2.0 / 4.2 / 3.9 |
+| 808 | +3.4 | 0.001 | +0.27 | 1.9 / 4.3 / 4.6 |
+| 909 | +2.8 | 0.004 | +0.19 | 1.9 / 3.9 / 3.6 |
 
-Status: open. To finish: run seeds 808 and 909 with `out/em/b48r.sh` (only those two lines).
+(p 0.001 is the floor of the 1000-shuffle null.)
+- Gate (p < 0.01 on ≥ 3/4 seeds): PASS, 4/4. Prediction (3/4): wrong, in the good direction.
+- With §48: the covariance rule gives pattern-specific CA1 → EC LV weights on 7 of 8 seeds
+  (only s303 in §48 misses, p 0.03). Primary 2 (effect on EC LV activity) was not tested here.
