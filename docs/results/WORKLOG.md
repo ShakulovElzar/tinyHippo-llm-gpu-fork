@@ -1621,3 +1621,46 @@ from that alone; it shows that the rule follows EC LV activity, not that CA1 lea
 **Prediction.** Primary 1 PASS. Primary 2 FAIL at 1%.
 
 Code for §50–§51: new commit; S0 digest `8631eb29…` unchanged (`out/em/s0_after13.h5`); run from the frozen worktree.
+
+### §50 result (2026-11-23): primary 1 FAIL (5/8), primary 2 PASS (borderline)
+
+| seed | spec z (p) | mean Δw | C 2nd half | N 2nd half | C − N | C − L48 |
+|---|---|---|---|---|---|---|
+| 202 | +8.6 (0.001) | +0.037 | +0.177 | −0.073 | +0.250 | −0.196 |
+| 303 | +2.5 (0.011) | +0.025 | −0.001 | +0.011 | −0.012 | +0.184 |
+| 404 | +8.2 (0.001) | +0.029 | +0.209 | −0.078 | +0.287 | +0.141 |
+| 505 | +2.0 (0.023) | +0.030 | +0.015 | −0.030 | +0.045 | −0.128 |
+| 606 | +7.4 (0.001) | +0.034 | +0.077 | −0.008 | +0.085 | −0.011 |
+| 707 | +2.2 (0.015) | +0.034 | +0.242 | +0.036 | +0.206 | +0.206 |
+| 808 | +5.7 (0.001) | +0.040 | +0.021 | +0.078 | −0.057 | −0.139 |
+| 909 | +3.0 (0.006) | +0.034 | +0.150 | +0.005 | +0.145 | +0.088 |
+
+- Primary 1: p < 0.01 on 5/8 (gate 6/8): FAIL. Spec z is positive on 8/8; the 3 misses have p 0.011–0.023.
+- Centring works as built: mean Δw +0.03 (L48: +0.16 to +0.49).
+- Primary 2: C − N mean +0.119 [+0.015, +0.223], positive 6/8, Wilcoxon one-sided p 0.027: PASS.
+- But C − L48 (same seed) is +0.018 [−0.114, +0.151], 4/8. Centring does not change the functional
+  effect. §49 (L48) gave +0.106 [−0.035, +0.247] against the same twins. Reading: the covariance trace
+  has a small effect on EC LV activity (about +0.11 z) in both variants; §50 passes and §49 fails by
+  noise around that size. This is not evidence that the common mode was the problem (my §48 guess was wrong).
+- mPFC LOO C − N +0.06 [−0.09, +0.21]: no effect in mPFC.
+
+### §51 result (2026-11-23): primary 1 FAIL (5/8), primary 2 FAIL
+
+| seed | mPFC spec z (p) | mean Δw/w₀ | M 2nd half | N 2nd half | M − N | LOO M − N |
+|---|---|---|---|---|---|---|
+| 202 | +4.0 (0.003) | +0.044 | +0.242 | −0.025 | +0.267 | −0.21 |
+| 303 | +11.8 (0.001) | +0.035 | +0.182 | +0.012 | +0.170 | +0.17 |
+| 404 | +4.4 (0.001) | +0.033 | +0.180 | +0.364 | −0.184 | +0.04 |
+| 505 | +1.0 (0.152) | +0.038 | +0.037 | +0.092 | −0.055 | −0.08 |
+| 606 | +8.9 (0.001) | +0.043 | −0.005 | −0.045 | +0.040 | +0.04 |
+| 707 | +0.2 (0.395) | +0.041 | +0.226 | +0.066 | +0.160 | +0.29 |
+| 808 | −0.6 (0.735) | +0.048 | +0.295 | +0.144 | +0.151 | +0.05 |
+| 909 | +3.5 (0.004) | +0.039 | +0.268 | +0.235 | +0.033 | −0.12 |
+
+- Primary 1: p < 0.01 on 5/8: FAIL. Seeds 505, 707, 808 show no structure by EC LV label.
+- Primary 2: M − N mean +0.073 [−0.048, +0.193], 6/8 positive, Wilcoxon p 0.156: FAIL. LOO +0.02.
+- Mean Δw/w₀ stays +0.03 to +0.05 with centring: the lower clip (0.1 × w₀) is not reached, so the
+  rest comes from the covariance itself; not checked further.
+- EC LV in M51 (`score_cons.py`): spec p < 0.01 on 6/8 (303 0.010, 909 0.013), as in §48.
+- Reading: the rule writes EC LV-label structure into EC LV → mPFC on 5/8 seeds, but mPFC
+  activity does not follow it reliably at 1%. Consolidation into mPFC is not shown.

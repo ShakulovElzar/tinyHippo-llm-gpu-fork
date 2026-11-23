@@ -10,7 +10,7 @@ Branch `llm-work` of `ShakulovElzar/tinyHippo-llm-gpu-fork`. Full detail and eve
 - With group wiring this is relay, not consolidation. With random cortical wiring, a covariance
   rule during sleep writes pattern-specific CA1 → EC LV weights on 3/4 seeds (§48), and on 4/4 fresh
   seeds in a pre-registered replication (§48r). The effect of
-  those weights on EC LV activity is small and not significant on 8 seeds (§49), and it does not reach mPFC.
+  those weights on EC LV activity is small, about +0.11 z, significant in one of two 8-seed tests (§49, §50), and it does not reach mPFC.
 - Every new mechanism is an opt-in flag. The default model is unchanged: the 1-thread S0 digest
   `8631eb29…` is the same after every flag.
 
@@ -82,6 +82,8 @@ Control: the same with `--no-stc-hook --no-mpfc-assoc` (no plasticity).
 | STC tag-and-capture | 0/4 (98% of synapses saturate at the cap) | +0.07 [−0.45, +0.59] | §45 |
 | STC + per-cell capture limit 20% | 0/4 | −0.10 [−0.31, +0.11] | §46 |
 | covariance, Δw = η·w₀·(x−⟨x⟩)(y−⟨y⟩), η 0.1 | **3/4** (z +7.6 / +2.0 / +5.2 / +3.7); fresh seeds **4/4** (z +3.6 / +6.8 / +3.4 / +2.8) | 8 seeds: +0.11 [−0.04, +0.25], 6/8 positive | §48, §48r, §49 |
+| covariance without common mode (`--lv-cov-center`) | 5/8 (z > 0 on 8/8) | +0.12 [+0.02, +0.22], 6/8; same as without centring | §50 |
+| + covariance on EC LV → mPFC (`--mpfc-cov-eta 0.1 --mpfc-cov-center`) | mPFC weights 5/8 | mPFC +0.07 [−0.05, +0.19] | §51 |
 
 Recommendation: use the covariance rule (`--lv-cov-eta 0.1`) for further consolidation work.
 STC as built is a correlation rule: most CA1 cells fire in every SWR, so it potentiates almost
