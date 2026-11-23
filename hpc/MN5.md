@@ -64,4 +64,5 @@ rsync -av <user>@transfer1.bsc.es:'~/tinyHippo-llm-gpu/Nest_flags_*.slurm*' res/
 .venv/bin/python analysis/score_cons.py res/2026-11-mn5/L48_12pct_s303.h5 res/2026-11-mn5/N48_12pct_s303.h5
 ```
 
-Not checked yet: run time at 12% for these configs, and that every flag behaves the same under NEST 3.9.
+Estimate from 1% and 2% (WORKLOG §49 B): about 13 CPU-h and 26 GB peak memory per 12% run. Not checked yet:
+the real 12% time on MN5, and that every flag behaves the same under NEST 3.9.

@@ -10,7 +10,7 @@ Branch `llm-work` of `ShakulovElzar/tinyHippo-llm-gpu-fork`. Full detail and eve
 - With group wiring this is relay, not consolidation. With random cortical wiring, a covariance
   rule during sleep writes pattern-specific CA1 → EC LV weights on 3/4 seeds (§48), and on 4/4 fresh
   seeds in a pre-registered replication (§48r). The effect of
-  those weights on EC LV activity is not yet reliable, and it does not reach mPFC.
+  those weights on EC LV activity is small and not significant on 8 seeds (§49), and it does not reach mPFC.
 - Every new mechanism is an opt-in flag. The default model is unchanged: the 1-thread S0 digest
   `8631eb29…` is the same after every flag.
 
@@ -81,7 +81,7 @@ Control: the same with `--no-stc-hook --no-mpfc-assoc` (no plasticity).
 |---|---|---|---|
 | STC tag-and-capture | 0/4 (98% of synapses saturate at the cap) | +0.07 [−0.45, +0.59] | §45 |
 | STC + per-cell capture limit 20% | 0/4 | −0.10 [−0.31, +0.11] | §46 |
-| covariance, Δw = η·w₀·(x−⟨x⟩)(y−⟨y⟩), η 0.1 | **3/4** (z +7.6 / +2.0 / +5.2 / +3.7); fresh seeds **4/4** (z +3.6 / +6.8 / +3.4 / +2.8) | +0.13 [−0.26, +0.51] | §48, §48r |
+| covariance, Δw = η·w₀·(x−⟨x⟩)(y−⟨y⟩), η 0.1 | **3/4** (z +7.6 / +2.0 / +5.2 / +3.7); fresh seeds **4/4** (z +3.6 / +6.8 / +3.4 / +2.8) | 8 seeds: +0.11 [−0.04, +0.25], 6/8 positive | §48, §48r, §49 |
 
 Recommendation: use the covariance rule (`--lv-cov-eta 0.1`) for further consolidation work.
 STC as built is a correlation rule: most CA1 cells fire in every SWR, so it potentiates almost
@@ -117,6 +117,7 @@ But a planted-trace test showed that G2 is unreliable at 1% (§20, old §30 in �
 ## 7. Limits
 
 - Everything is 1%. Cells per memory are few (EC LV 600 cells, 30 CA1 inputs each); 12% is not run.
+- Scaling 1% → 2% is close to linear (wall 1.88×, memory 2.0×). Estimate for 12%: about 13 CPU-h and 26 GB (§49 B).
 - 3-thread runs are not bit-identical; replication is across seeds (4 per condition).
 - Scorers: `analysis/score_chain.py` (chain z and rates), `analysis/score_cons.py` (§45–§48 gates), `analysis/score_bias.py` (§47). Run from the repo root on the run HDF5 files; the run files themselves are not committed.
 

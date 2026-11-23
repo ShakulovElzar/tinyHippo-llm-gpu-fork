@@ -1550,3 +1550,38 @@ Prediction: 6/8 positive, interval includes 0: FAIL.
 assuming linear growth in cell count (in-degrees are fixed). This is an estimate for the MN5 job
 limits (20 h wall, 50 cores), not a result. The 12% estimate is checked by the first MN5 run.
 Code: frozen worktree `8b4d4d9`.
+
+### §49 result (2026-11-23)
+
+**A. Functional effect, 8 seeds: FAIL (as predicted).**
+
+| seed | twin | L 2nd half | N 2nd half | L − N | mPFC LOO L − N |
+|---|---|---|---|---|---|
+| 202 | N45 | +0.373 | −0.008 | +0.381 | −0.33 |
+| 303 | N45 | −0.185 | +0.011 | −0.196 | −0.08 |
+| 404 | N45 | +0.068 | −0.059 | +0.127 | +0.04 |
+| 505 | N45 | +0.143 | −0.059 | +0.202 | +0.09 |
+| 606 | N48 | +0.088 | +0.090 | −0.002 | +0.13 |
+| 707 | N48 | +0.036 | +0.000 | +0.036 | +0.42 |
+| 808 | N48 | +0.160 | −0.024 | +0.184 | −0.04 |
+| 909 | N48 | +0.062 | −0.056 | +0.118 | −0.21 |
+
+- L − N: mean +0.106, 95% t [−0.035, +0.247]; positive on 6/8. The interval includes 0, so the gate fails.
+- Secondary: Wilcoxon one-sided p 0.074; one-sided t p 0.059. mPFC LOO L − N mean +0.002.
+- Reading: the direction is consistent, but the effect is small at 1%. It does not reach mPFC.
+  The synaptic trace (primary 1) passes on 7/8 seeds; its effect on EC LV activity is not shown.
+
+**B. Scaling 1% → 2% (seed 202, 3 threads, both runs at the same time).**
+
+| scale | wall | CPU (user) | peak RSS | HDF5 |
+|---|---|---|---|---|
+| 1% | 1454 s | 3863 s | 2.19 GB | 4.7 MB |
+| 2% | 2737 s | 7588 s | 4.37 GB | 12.2 MB |
+
+- Ratio 2%/1%: wall 1.88, memory 2.00. Growth is close to linear in cell count.
+- Linear estimate for 12% (not a result): CPU about 12 × 3.8 ks ≈ 46 ks ≈ 13 CPU-h;
+  wall about 4.3 h at 3 M4 threads; peak memory about 26 GB.
+- On MN5 with 50 cores the wall time depends on NEST thread scaling and on the
+  single-thread Python hooks. Even with no speed-up over 3 threads and slower cores (0.7×),
+  the estimate is about 6 h, inside the 20 h limit. Memory per node on MN5 GPP is not checked here.
+- The 2% run has 2.6× the HDF5 size; at 12% about 90 MB per run.
