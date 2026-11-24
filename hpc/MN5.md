@@ -1,6 +1,6 @@
 # MN5: run the 12% jobs (for the person with MN5 access)
 
-All commands run on MN5. Nothing is needed from the author's Mac except one small file (step 2).
+All commands run on MN5. Nothing is needed from the author's Mac.
 Replace `<user>` with your BSC user name.
 
 ## 1. Get the code (once)
@@ -21,15 +21,13 @@ git clone -b llm-work https://github.com/ShakulovElzar/tinyHippo-llm-gpu-fork.gi
 rsync -av tinyHippo-llm-gpu/ <user>@transfer1.bsc.es:~/tinyHippo-llm-gpu/
 ```
 
-## 2. Put the memory file in place
+## 2. Memory file
 
-The flag files use `--ec-memories out/nous/mem3.json` (3 facts, 855 bytes). It is not in git;
-the author sends it separately. Put it here:
+The flag files use `--ec-memories out/nous/mem3.json` (3 facts). It is in git, so the clone
+already has it. Check:
 
 ```bash
-mkdir -p ~/tinyHippo-llm-gpu/out/nous
-# copy the received mem3.json into ~/tinyHippo-llm-gpu/out/nous/mem3.json
-ls -la ~/tinyHippo-llm-gpu/out/nous/mem3.json
+cat ~/tinyHippo-llm-gpu/out/nous/mem3.json
 ```
 
 ## 3. Environment

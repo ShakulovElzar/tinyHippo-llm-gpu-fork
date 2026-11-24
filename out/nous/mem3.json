@@ -1,0 +1,22 @@
+{
+  "source": "nous export (3 facts)",
+  "agent": "redacted",
+  "n_slots": 3,
+  "memories": [
+    {
+      "id": "m0",
+      "text": "Glenn L. Martin Company was founded by Glenn L. Martin.",
+      "slot": 0
+    },
+    {
+      "id": "m1",
+      "text": "Ian Marter died in the city of London.",
+      "slot": 1
+    },
+    {
+      "id": "m2",
+      "text": "Katniss Everdeen was created by Suzanne Collins.",
+      "slot": 2
+    }
+  ]
+}
