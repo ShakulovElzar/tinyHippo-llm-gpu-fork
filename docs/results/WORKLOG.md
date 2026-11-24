@@ -1677,3 +1677,25 @@ database IDs removed (original kept locally). Read-only export, `llm/nous_export
 **Readout.** `analysis/score_chain.py`: home-group z and permutation p per stage (CA3, CA1, EC LV, mPFC), firing rates.
 **Pass (pilot).** Both runs finish; mPFC z p < 0.01 on 2/2 seeds.
 **Prediction.** Runs finish; z per stage lower than `m1` with 3 memories (§44: mPFC +0.44); mPFC p < 0.01 on 2/2.
+
+### §52 result (2026-11-24): PASS (pilot)
+
+Both runs finish (no errors). `score_chain.py`, home-group z [95% CI], permutation p:
+
+| stage | s202 | s303 |
+|---|---|---|
+| CA3 SUP | +1.29 [+1.05, +1.54], p 0.0005 | +1.07 [+0.82, +1.32], p 0.0005 |
+| CA1 PYR | +0.78 [+0.51, +1.04], p 0.0005 | +0.78 [+0.55, +1.02], p 0.0005 |
+| EC LV | +0.63 [+0.33, +0.93], p 0.0005 | +0.62 [+0.34, +0.90], p 0.0005 |
+| mPFC | +0.47 [+0.19, +0.74], p 0.0005 | +0.66 [+0.37, +0.95], p 0.0005 |
+
+- mPFC p < 0.01 on 2/2: PASS.
+- Per memory (mean z over its 8 blocks), all 6 memories positive in EC LV and mPFC on both seeds:
+  mPFC s202 +0.10 / +0.31 / +0.32 / +1.21 / +0.69 / +0.16; s303 +0.51 / +0.07 / +0.99 / +0.77 / +1.12 / +0.52.
+  The weakest are memories 0 and 1 (s202) and 1 (s303), not the one-group memories 4–5.
+- LOO decoder, 6 classes (chance 0.17): EC LV 0.29 / 0.25, mPFC 0.27 / 0.35.
+- My prediction "z lower than with 3 memories" cannot be checked this way: the z is normalised
+  over the P pattern means, so its scale changes with P. Compare loads with the decoder or with
+  a P-free readout, not with this z.
+- Cost: wall 3853 / 3827 s, CPU 10.6 ks (2.7× the 24-block 1% run, §49 B), peak RSS 2.0–2.4 GB.
+  Linear estimate for 12% with 6 memories and 48 blocks: about 35 CPU-h per job (not a result).
