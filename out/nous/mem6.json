@@ -1,0 +1,37 @@
+{
+  "source": "nous export (6 facts)",
+  "agent": "redacted",
+  "n_slots": 6,
+  "memories": [
+    {
+      "id": "m0",
+      "text": "Glenn L. Martin Company was founded by Glenn L. Martin.",
+      "slot": 0
+    },
+    {
+      "id": "m1",
+      "text": "Ian Marter died in the city of London.",
+      "slot": 1
+    },
+    {
+      "id": "m2",
+      "text": "Katniss Everdeen was created by Suzanne Collins.",
+      "slot": 2
+    },
+    {
+      "id": "m3",
+      "text": "Princess Alice, Duchess of Gloucester is affiliated with the religion of Anglicanism.",
+      "slot": 3
+    },
+    {
+      "id": "m4",
+      "text": "Edward Cullen was performed by Robert Pattinson.",
+      "slot": 4
+    },
+    {
+      "id": "m5",
+      "text": "Macbeth was created by William Shakespeare.",
+      "slot": 5
+    }
+  ]
+}

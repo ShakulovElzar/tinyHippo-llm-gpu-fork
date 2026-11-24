@@ -23,11 +23,11 @@ rsync -av tinyHippo-llm-gpu/ <user>@transfer1.bsc.es:~/tinyHippo-llm-gpu/
 
 ## 2. Memory file
 
-The flag files use `--ec-memories out/nous/mem3.json` (3 facts). It is in git, so the clone
-already has it. Check:
+The flag files use `--ec-memories out/nous/mem3.json` (3 facts); the optional job in step 5
+uses `out/nous/mem6.json` (6 facts). Both are in git, so the clone already has them. Check:
 
 ```bash
-cat ~/tinyHippo-llm-gpu/out/nous/mem3.json
+cat ~/tinyHippo-llm-gpu/out/nous/mem3.json ~/tinyHippo-llm-gpu/out/nous/mem6.json
 ```
 
 ## 3. Environment
@@ -76,6 +76,14 @@ sbatch --export=ALL,FLAGS=hpc/flags/L48.flags,NAME=M51,SEED=303,EXTRA="--mpfc-co
 sbatch --export=ALL,FLAGS=hpc/flags/L48.flags,NAME=N48,SEED=303,EXTRA="--no-stc-hook --no-mpfc-assoc" hpc/run_flags.sh
 ```
 
+Optional, after the 6 jobs above: load test with 6 memories in `m1`, WORKLOG §52 (1% pilot passed
+on 2/2 seeds). 48 sleep blocks, so about 2.7× the cost of an `m1` job (estimate about 35 CPU-h).
+If the `m1` jobs above took more than 7 h, ask the author before submitting this one.
+
+```bash
+sbatch --export=ALL,FLAGS=hpc/flags/m1.flags,NAME=P52,SEED=202,EXTRA="--n-patterns 6 --ec-memories out/nous/mem6.json --n-swr 48" hpc/run_flags.sh
+```
+
 Check: `squeue -u <user>`. Output: `results/<NAME>_12pct_s<SEED>.h5`.
 
 ## 6. Send the results back
@@ -97,5 +105,5 @@ Expected size: about 100 MB per job, so under 1 GB in total. Copy it off MN5 thr
 .venv/bin/python analysis/score_mpfc.py res/2026-11-mn5/results/M51_12pct_s202.h5 res/2026-11-mn5/results/N48_12pct_s202.h5
 ```
 
-Same for seed 303. Not checked yet: the real 12% time on MN5, the module names, and that every
+Same for seed 303. For the optional 6-memory job: `analysis/score_chain.py res/2026-11-mn5/results/P52_12pct_s202.h5`. Not checked yet: the real 12% time on MN5, the module names, and that every
 flag behaves the same under NEST 3.9 (step 4 checks the last one).
