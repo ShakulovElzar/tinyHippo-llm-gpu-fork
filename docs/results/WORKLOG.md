@@ -1664,3 +1664,16 @@ Code for §50–§51: new commit; S0 digest `8631eb29…` unchanged (`out/em/s0_
 - EC LV in M51 (`score_cons.py`): spec p < 0.01 on 6/8 (303 0.010, 909 0.013), as in §48.
 - Reading: the rule writes EC LV-label structure into EC LV → mPFC on 5/8 seeds, but mPFC
   activity does not follow it reliably at 1%. Consolidation into mPFC is not shown.
+
+## §52. Pilot: 6 database memories in `m1` (pre-registered 2026-11-24, before the runs)
+
+**Question.** Do the `m1` flags run with 6 memories, and does each memory still travel
+EC LII → … → mPFC? This prepares a later load test at 12%; it is a pilot, not a claim.
+**Input.** `out/nous/mem6.json`: the first 6 active facts of the same agent (slots 0–2 = `mem3.json`),
+database IDs removed (original kept locally). Read-only export, `llm/nous_export.py --n 6`.
+**Runs.** `P52_s202`, `P52_s303` = `hpc/flags/m1.flags` + `--n-patterns 6 --ec-memories out/nous/mem6.json --n-swr 48`
+(48 blocks = 8 per memory, as 24 blocks give with 3). Code `31e778a` (frozen worktree).
+**Limit.** At 1% there are 10 groups, so pattern = group mod 6 gives 2 groups to patterns 0–3 and 1 group to 4–5.
+**Readout.** `analysis/score_chain.py`: home-group z and permutation p per stage (CA3, CA1, EC LV, mPFC), firing rates.
+**Pass (pilot).** Both runs finish; mPFC z p < 0.01 on 2/2 seeds.
+**Prediction.** Runs finish; z per stage lower than `m1` with 3 memories (§44: mPFC +0.44); mPFC p < 0.01 on 2/2.
